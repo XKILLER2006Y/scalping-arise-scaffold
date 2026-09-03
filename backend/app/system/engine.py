@@ -10,9 +10,9 @@ from app.intelligence.engine import is_blocked
 _signal_counts: dict[str, int] = {"BUY": 0, "SELL": 0, "NO_TRADE": 0}
 _forward_log: list[dict] = []
 
-def _record_signal(action: str, state: str | None = None):
+def _record_signal(action: str, state: str | None = None, strategy: str | None = None):
     _signal_counts[action] = _signal_counts.get(action, 0) + 1
-    _forward_log.append({"t": int(time.time()), "action": action, "state": state})
+    _forward_log.append({"t": int(time.time()), "action": action, "state": state, "strategy": strategy})
     if len(_forward_log) > 500:
         del _forward_log[:len(_forward_log) - 500]
 
@@ -36,7 +36,12 @@ def full_trace(candles_1m, candles_5m, candles_15m, symbol="XAU/USD", equity=100
         sig = {"action": "NO_TRADE", "strategy": None, "direction": None, "confidence": 0,
                "quality": 0, "state": "BLOCKED_NEWS", "reasons": [news["reason"]]}
     trade = plan_trade(sig, candles_1m[-1].close if candles_1m else 0, feats.get("atr14"), equity, risk_pct, spread) if candles_1m else {"feasible": False}
-    _record_signal(sig.get("action", "NO_TRADE"), sig.get("state"))
+    _record_signal(sig.get("action", "NO_TRADE"), sig.get("state"), sig.get("strategy"))
+    try:
+        from app.core.store import persist_signal
+        persist_signal(sig.get("action", "NO_TRADE"), sig.get("state"), sig.get("strategy"))
+    except Exception:
+        pass
     return {"symbol": symbol, "market": a.model_dump(), "features_mtf": mtf,
             "evaluations": evs, "signal": sig, "news": news, "trade_plan": trade,
             "latency_ms": round((time.time() - t0) * 1000, 1),

@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     app_name: str = "Scalping Arise"
     api_v1_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:3000"]
+    sca_api_key: str = ""  # optional guard; env SCA_API_KEY. Empty = open demo mode.
 
     # --- Market data ---
     twelve_data_api_key: str = ""

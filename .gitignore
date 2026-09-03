@@ -2,6 +2,7 @@
 .env.local
 .env.*
 !.env.example
+backend/data/
 __pycache__/
 *.py[cod]
 .venv/
