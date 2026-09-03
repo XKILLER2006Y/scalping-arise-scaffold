@@ -52,7 +52,7 @@ def analyze(candles: list[Candle], symbol: str = "XAU/USD") -> AnalysisResult:
     res = sorted(set(round(c.high, 2) for c in candles[-30:]))[-3:] if candles else []
     st = candles[0].source_type if candles else SourceType.SPOT
     import datetime
-    hr = datetime.datetime.utcnow().hour
+    hr = datetime.datetime.now(datetime.timezone.utc).hour
     sess = "LONDON" if 7 <= hr < 12 else ("NEW_YORK" if 12 <= hr < 17 else ("ASIA" if hr >= 22 or hr < 7 else "OFF"))
     return AnalysisResult(symbol=symbol, trend=trend, regime=regime, session=sess,
                           swings_high=highs[-5:], swings_low=lows[-5:], bos=bos, choch=choch,

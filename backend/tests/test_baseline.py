@@ -24,13 +24,14 @@ def test_market_analysis_no_signals():
     assert "trend" in j and "regime" in j
     assert "BUY" not in str(j) and "SELL" not in str(j)
 
-def test_technical_core_no_extension():
+def test_technical_core_with_extension():
     c = client.get("/api/v1/market-data/candles", params={"limit": 100}).json()["candles"]
     r = client.post("/api/v1/technical-features", json={"symbol": "XAU/USD", "candles": c})
     assert r.status_code == 200
     j = r.json()
-    assert j["ema20"] is not None and j["rsi14"] is not None
-    assert "volatility" not in j  # extension NOT implemented
+    assert j["features"]["ema20"] is not None and j["features"]["rsi14"] is not None
+    assert j["volatility"] in ("LOW_VOLATILITY", "NORMAL_VOLATILITY", "HIGH_VOLATILITY", "EXTREME_VOLATILITY", None)
+    assert j["status"] in ("READY", "WARMING_UP", "UNAVAILABLE")
     assert "BUY" not in str(j)
 
 def test_futures_proxy_never_equals_spot():

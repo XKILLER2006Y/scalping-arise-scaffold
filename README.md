@@ -1,16 +1,18 @@
 # Scalping Arise — Scaffold (interim, until friend shares real repo)
 
-Modular XAU/USD trading analysis platform. This scaffold mirrors Phases 1-4 CORE only.
+Modular XAU/USD trading analysis platform. This scaffold mirrors Phases 1-4 CORE + Phase 4 extension (scaffold-only).
 
-## Current Status
+## Current Status (scaffold)
 ```
 Phase 1: Complete
 Phase 2: Complete and Corrected
 Phase 3: Complete
 Phase 4 Core: Complete
-Phase 4 Extension: Planned / Not Yet Implemented
-Phase 5-10: Planned
+Phase 4 Extension: Implemented in scaffold (MTF 1m/5m/15m, volatility, READY/WARMING_UP/UNAVAILABLE)
+Phase 5-10: Planned, NOT implemented
 ```
+
+> Friend's real repo: extension still PLANNED until joint schema lock. This scaffold is your practice/reference only.
 
 ## Architecture
 ```
