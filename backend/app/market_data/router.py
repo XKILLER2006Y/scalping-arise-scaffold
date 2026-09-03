@@ -5,7 +5,8 @@ router = APIRouter(prefix="/market-data", tags=["market-data"])
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "module": "market_data"}
+    from app.market_data.service import provider_health
+    return {"status": "ok", "module": "market_data", "providers": provider_health()}
 
 @router.get("/capabilities")
 def capabilities():

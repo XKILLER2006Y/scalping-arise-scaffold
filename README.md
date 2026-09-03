@@ -1,46 +1,47 @@
-# Scalping Arise — Scaffold (interim, until friend shares real repo)
+# Scalping Arise — Scaffold (ours, compare later with friend's repo)
 
-Modular XAU/USD trading analysis platform. This scaffold mirrors Phases 1-4 CORE + Phase 4 extension (scaffold-only).
+Modular XAU/USD trading analysis platform. Scaffold-only full pipeline.
 
-## Current Status (scaffold)
+## Current Status (scaffold — COMPLETE)
 ```
 Phase 1: Complete
-Phase 2: Complete and Corrected
+Phase 2: Complete (live Twelve Data SPOT + yfinance GC=F FUTURES_PROXY, retries, cache, failover, freshness, gaps)
 Phase 3: Complete
-Phase 4 Core: Complete
-Phase 4 Extension: Implemented in scaffold (MTF 1m/5m/15m, volatility, READY/WARMING_UP/UNAVAILABLE)
-Phase 5-10: Planned, NOT implemented
+Phase 4 Core + Extension: Complete (MTF 1m/5m/15m, volatility, READY/WARMING_UP/UNAVAILABLE)
+Phase 5 Strategy: Complete (TREND_CONT + RANGE_FADE evaluation)
+Phase 6 Signals: Complete (BUY/SELL/NO_TRADE, confidence vs quality, conflict resolver)
+Phase 7 Trade Plan: Complete (1.5xATR SL, 2R TP, RR, sizing, spread check — plan only)
+Phase 8 Intelligence: Complete (news blackout + PF/WR kill-switch)
+Phase 9 Backtest: Complete (metrics + PROMOTE/WAIT/REJECT gate)
+Phase 10 System: Complete (trace + health)
 ```
 
-> Friend's real repo: extension still PLANNED until joint schema lock. This scaffold is your practice/reference only.
+> Friend's real repo stays joint-locked. This is our independent reference for later comparison.
 
 ## Architecture
 ```
-Market Data -> Market Structure & Regime -> Technical Features -> [STOP]
-Strategy / Signals / Risk / News / Backtest: NOT IMPLEMENTED
+Market Data -> Structure/Regime -> Features MTF -> Strategy Eval -> Signal Decide -> Trade Plan -> Intel/News -> Backtest -> Trace/Health
 ```
 
 ## Structure
 ```
-backend/app/main.py — factory, CORS, versioned API
-backend/app/core/ — config, logging, errors
-backend/app/market_data/ — providers (twelve_data SPOT, yfinance GC=F FUTURES_PROXY), service (validate/cache/failover/freshness/gaps), router
-backend/app/market_analysis/ — swings, trend, BOS/CHOCH, S/R, session, regime
-backend/app/technical_features/ — EMA20/50/200, RSI14, MACD, ATR14, BB20, VolSMA20, price features
-frontend/app/page.tsx — health verification only
-docs/PHASE4_EXTENSION_PROPOSAL.md — schema proposal, no code
+backend/app/main.py — factory v0.10.0-scaffold
+backend/app/core/, market_data/, market_analysis/, technical_features/
+backend/app/strategy/, signals/, trade_planning/, intelligence/, backtesting/, system/
+frontend/app/page.tsx + layout.tsx, frontend/lib/api.ts — full pipeline dashboard
+docs_API_CONTRACTS.md — endpoint inventory
+docs_PHASE4_EXTENSION_PROPOSAL.md — original proposal
 ```
 
 ## Prerequisites
-Python 3.11+, Node 18+ (frontend optional)
+Python 3.11+, Node 18+
 
-## Backend Setup (source of truth)
+## Backend Setup
 ```bash
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-uvicorn app.main:app --reload --port 8000
+cd /home/arifureta/Desktop/scalping-arise-scaffold
+.venv/bin/python -m pytest backend/tests -q
+.venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
+# live data: set backend/.env SCALPING_ARISE_TWELVE_DATA_API_KEY=... (else demo-synthetic SPOT)
 ```
 
 ## Frontend Setup
@@ -48,29 +49,22 @@ uvicorn app.main:app --reload --port 8000
 cd frontend
 cp .env.example .env.local
 npm install
-npm run dev
+npm run dev  # or npm run build && npm start
 ```
 
 ## Testing
 ```bash
-cd backend
-pytest -q
+.venv/bin/python -m pytest backend/tests -q  # 15 tests
 ```
 
 ## API Overview
-```
-/api/v1/health
-/api/v1/market-data/health, /capabilities, /candles, /latest
-/api/v1/market-analysis/health, /capabilities, POST /api/v1/market-analysis
-/api/v1/technical-features/health, /capabilities, POST /api/v1/technical-features
-```
+See docs_API_CONTRACTS.md. Key: /health, /market-data/*, /market-analysis, /technical-features + /mtf, /strategy/evaluate, /signals/decide, /trade-plan, /intelligence/*, /backtest/run, /system/trace + /health
 
 ## Data Source Warning
 - Twelve Data XAU/USD = SPOT
-- yfinance GC=F = FUTURES_PROXY
-- Never treat GC=F == spot. `source_type`, `provider_instrument`, `canonical_instrument` preserved end-to-end.
+- yfinance GC=F = FUTURES_PROXY — never equal to spot. source_type preserved end-to-end.
 
 ## Development Rules
-- Do not mix phases. Phase 4 describes, never decides.
-- No look-ahead bias. No BUY/SELL/NO-TRADE before Phase 6.
-- Preserve source metadata. No secrets in git. Add tests. Run regression.
+- Phase 4 describes, never decides. Decisions live in Phase 6+ only.
+- No look-ahead: only closed candles per TF.
+- Analysis only. Not financial advice.
