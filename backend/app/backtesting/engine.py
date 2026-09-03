@@ -7,7 +7,7 @@ from app.signals.engine import decide
 from app.trade_planning.engine import plan
 
 def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float = 1.0,
-                 warmup: int = 200, horizon: int = 10) -> dict:
+                 warmup: int = 200, horizon: int = 10, cost_per_trade: float = 0.3) -> dict:
     trades: list[dict] = []
     equity_curve = [equity]
     cur = equity
@@ -18,8 +18,9 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
         f = compute_single_timeframe(window, "1m")
         feats = dict(f["features"]); feats["volatility"] = f["volatility"]; feats["rel_volume"] = f["features"].get("rel_volume")
         evs = evaluate_all(a.model_dump(), feats, window[-1].close)
-        sig = decide(evs, feats)
-        if sig["action"] == "NO_TRADE" or sig.get("state") != "CONFIRMED":
+        closes = [c.close for c in window]
+        sig = decide(evs, feats, {"session": a.session, "closes": closes[-10:], "analysis": a.model_dump()})
+        if sig["action"] == "NO_TRADE" or sig.get("state") not in ("CONFIRMED",):
             continue
         p = plan(sig, window[-1].close, feats.get("atr14"), equity=cur, risk_pct=risk_pct)
         if not p.get("feasible"):
@@ -46,7 +47,7 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
         risk_dist = abs(entry - sl) or 1e-9
         r_mult = gross / risk_dist
         risk_money = cur * risk_pct / 100.0
-        pnl = r_mult * risk_money
+        pnl = r_mult * risk_money - cost_per_trade  # spread/commission drag + TIME exit at `horizon` bars
         cur += pnl
         equity_curve.append(cur)
         peak = max(peak, cur)

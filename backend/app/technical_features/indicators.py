@@ -75,3 +75,62 @@ def bollinger(closes: list[float], period: int = 20, std: float = 2.0):
         sd = math.sqrt(var)
         mid[i] = m; up[i] = m + std * sd; lo[i] = m - std * sd
     return mid, up, lo
+
+def sma(values: list[float], period: int) -> list[float | None]:
+    out: list[float | None] = [None] * len(values)
+    for i in range(period - 1, len(values)):
+        out[i] = sum(values[i - period + 1:i + 1]) / period
+    return out
+
+def zscore(closes: list[float], period: int = 20) -> list[float | None]:
+    # (close - SMA) / StdDev, closed-bar only
+    out: list[float | None] = [None] * len(closes)
+    for i in range(period - 1, len(closes)):
+        w = closes[i - period + 1:i + 1]
+        m = sum(w) / period
+        var = sum((x - m) ** 2 for x in w) / period
+        sd = math.sqrt(var)
+        out[i] = (closes[i] - m) / sd if sd else 0.0
+    return out
+
+def adx(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> list[float | None]:
+    n = len(closes)
+    out: list[float | None] = [None] * n
+    if n < 2 * period + 1:
+        return out
+    pmap, mmap = [0.0] * n, [0.0] * n
+    trs = [0.0] * n
+    for i in range(1, n):
+        up, dn = highs[i] - highs[i-1], lows[i-1] - lows[i]
+        pmap[i] = up if up > dn and up > 0 else 0.0
+        mmap[i] = dn if dn > up and dn > 0 else 0.0
+        trs[i] = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
+    satr = sum(trs[1:period+1])
+    sp, sm = sum(pmap[1:period+1]), sum(mmap[1:period+1])
+    dxs: list[float] = []
+    for i in range(period + 1, n):
+        satr = satr - satr / period + trs[i]
+        sp = sp - sp / period + pmap[i]
+        sm = sm - sm / period + mmap[i]
+        dip = 100 * sp / satr if satr else 0.0
+        dim = 100 * sm / satr if satr else 0.0
+        dxs.append(100 * abs(dip - dim) / (dip + dim) if (dip + dim) else 0.0)
+    if len(dxs) < period:
+        return out
+    a = sum(dxs[:period]) / period
+    out[2 * period] = a
+    for k in range(period, len(dxs)):
+        a = (a * (period - 1) + dxs[k]) / period
+        out[2 * period + (k - period + 1)] = a
+    return out
+
+def vwap(highs: list[float], lows: list[float], closes: list[float], volumes: list[float | None]) -> list[float | None]:
+    # session-agnostic cumulative VWAP over given window; caller resets per session
+    out: list[float | None] = [None] * len(closes)
+    pv, vv = 0.0, 0.0
+    for i in range(len(closes)):
+        v = volumes[i] if i < len(volumes) and volumes[i] else 0.0
+        tp = (highs[i] + lows[i] + closes[i]) / 3
+        pv += tp * v; vv += v
+        out[i] = (pv / vv) if vv else None
+    return out

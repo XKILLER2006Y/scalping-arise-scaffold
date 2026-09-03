@@ -19,7 +19,7 @@ def health():
 
 @router.get("/capabilities")
 def caps():
-    return {"indicators": ["EMA20/50/200", "RSI14", "MACD12/26/9", "ATR14", "BB20/2", "VolSMA20", "price features"],
+    return {"indicators": ["EMA20/50/200", "RSI14", "MACD12/26/9", "ATR14", "ATR-ratio", "Z20", "ADX14", "VWAP", "BB20/2", "VolSMA20", "price features"],
             "extension": "IMPLEMENTED in scaffold: MTF 1m/5m/15m, volatility class, READY/WARMING_UP/UNAVAILABLE + reason",
             "timeframes": SUPPORTED_TFS}
 

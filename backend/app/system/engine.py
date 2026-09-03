@@ -5,7 +5,7 @@ from app.technical_features.engine import compute_mtf
 from app.strategy.engine import evaluate_all
 from app.signals.engine import decide
 from app.trade_planning.engine import plan as plan_trade
-from app.intelligence.engine import is_blocked
+from app.intelligence.engine import is_blocked, exposure_guard
 
 _signal_counts: dict[str, int] = {"BUY": 0, "SELL": 0, "NO_TRADE": 0}
 _forward_log: list[dict] = []
@@ -30,11 +30,17 @@ def full_trace(candles_1m, candles_5m, candles_15m, symbol="XAU/USD", equity=100
     a = analyze(candles_1m, symbol)
     feats = dict(entry_tf["features"]); feats["volatility"] = entry_tf["volatility"]
     evs = evaluate_all(a.model_dump(), feats, candles_1m[-1].close if candles_1m else None)
-    sig = decide(evs, feats)
+    closes = [c.close for c in candles_1m]
+    ctx = {"session": a.session, "closes": closes[-10:], "analysis": a.model_dump()}
+    sig = decide(evs, feats, ctx)
     news = is_blocked()
     if news["blocked"] and sig["action"] != "NO_TRADE":
         sig = {"action": "NO_TRADE", "strategy": None, "direction": None, "confidence": 0,
                "quality": 0, "state": "BLOCKED_NEWS", "reasons": [news["reason"]]}
+    expo = exposure_guard(equity)
+    if expo["blocked"] and sig["action"] != "NO_TRADE":
+        sig = {"action": "NO_TRADE", "strategy": None, "direction": None, "confidence": 0,
+               "quality": 0, "state": "BLOCKED_EXPOSURE", "reasons": [expo["reason"]]}
     trade = plan_trade(sig, candles_1m[-1].close if candles_1m else 0, feats.get("atr14"), equity, risk_pct, spread) if candles_1m else {"feasible": False}
     _record_signal(sig.get("action", "NO_TRADE"), sig.get("state"), sig.get("strategy"))
     try:
@@ -43,7 +49,7 @@ def full_trace(candles_1m, candles_5m, candles_15m, symbol="XAU/USD", equity=100
     except Exception:
         pass
     return {"symbol": symbol, "market": a.model_dump(), "features_mtf": mtf,
-            "evaluations": evs, "signal": sig, "news": news, "trade_plan": trade,
+            "evaluations": evs, "signal": sig, "news": news, "exposure": expo, "trade_plan": trade,
             "latency_ms": round((time.time() - t0) * 1000, 1),
             "disclaimer": "Analysis only. Not financial advice."}
 

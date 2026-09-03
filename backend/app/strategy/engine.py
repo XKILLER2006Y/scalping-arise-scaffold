@@ -1,5 +1,4 @@
 """Phase 5 engine: does market satisfy strategy? Returns qualified + breakdown."""
-from app.strategy.strategies import STRATEGIES
 
 def _ema_stack_bull(f) -> bool:
     try:
@@ -41,6 +40,16 @@ def eval_trend_cont(analysis: dict, feats: dict) -> dict:
         met.append(f"volatility={vol}")
     else:
         missing.append(f"volatility {vol} not NORMAL/HIGH")
+    adx = feats.get("adx14")
+    if adx is not None and adx >= 20:
+        met.append(f"ADX {adx:.1f}>=20 trend strength")
+    else:
+        missing.append(f"ADX {adx} < 20 (no trend strength)")
+    ratio = feats.get("atr_ratio")
+    if ratio is not None and 0.4 <= ratio <= 2.0:
+        met.append(f"ATR-ratio {ratio:.2f} in 0.4-2.0")
+    else:
+        missing.append(f"ATR-ratio {ratio} outside 0.4-2.0 (dead/spike)")
     if analysis.get("bos"):
         met.append("BOS=true")
     else:
@@ -80,6 +89,16 @@ def eval_range_fade(analysis: dict, feats: dict, entry_price: float | None = Non
         met.append(f"volatility={vol}")
     else:
         missing.append(f"volatility {vol} not LOW/NORMAL")
+    z = feats.get("z20")
+    if z is not None and abs(z) >= 2.0:
+        met.append(f"|Z| {abs(z):.2f}>=2.0 statistical extreme")
+    else:
+        missing.append(f"|Z| {z} < 2.0 (no extreme)")
+    adx = feats.get("adx14")
+    if adx is not None and adx <= 22:
+        met.append(f"ADX {adx:.1f}<=22 ranging")
+    else:
+        missing.append(f"ADX {adx} > 22 (trending, skip fade)")
     score = round(100 * len(met) / max(1, len(met) + len(missing)))
     return {"strategy": "RANGE_FADE", "direction": direction, "qualified": (not missing and direction is not None),
             "quality": score, "met": met, "missing": missing}

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from app.intelligence.engine import is_blocked, record, status
+from app.intelligence.engine import is_blocked, record, status, exposure_guard
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
 
@@ -15,6 +15,10 @@ def health():
 @router.get("/news-check")
 def news(now: int | None = None):
     return is_blocked(now)
+
+@router.get("/exposure")
+def expo(equity: float = 10000.0):
+    return exposure_guard(equity)
 
 @router.post("/record")
 def rec(r: Rec):

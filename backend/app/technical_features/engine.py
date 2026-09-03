@@ -2,7 +2,7 @@
 import time
 from app.core.config import settings
 from app.market_data.models import Candle
-from app.technical_features.indicators import ema, rsi, macd, atr, bollinger
+from app.technical_features.indicators import ema, rsi, macd, atr, bollinger, sma, zscore, adx, vwap
 
 SUPPORTED_TFS = ["1m", "5m", "15m"]
 FULL_READY_REQUIRED = 200  # EMA200 warm-up
@@ -44,6 +44,14 @@ def compute_single_timeframe(candles: list[Candle], timeframe: str, symbol: str 
     ml, sl, hl = macd(closes)
     a = atr(highs, lows, closes, 14)
     bm, bu, bl = bollinger(closes, 20, 2.0)
+    z = zscore(closes, 20)
+    ax = adx(highs, lows, closes, 14)
+    va = [c.volume for c in candles]
+    vw = vwap(highs, lows, closes, va)
+    # ATR ratio vs its own SMA20 (regime-normalized volatility, cf. Gold Snap Scalper)
+    avals = [x for x in a if x is not None]
+    asma = sma(avals, 20)
+    atr_ratio = (avals[-1] / asma[-1]) if avals and asma and asma[-1] else None
     last = n - 1
     vsma = sum(vols[-20:]) / min(20, len(vols)) if vols else None
     rel_vol = (vols[-1] / vsma) if vols and vsma else None
@@ -62,7 +70,8 @@ def compute_single_timeframe(candles: list[Candle], timeframe: str, symbol: str 
         "features": {
             "ema20": e20[last], "ema50": e50[last], "ema200": e200[last],
             "rsi14": r[last], "macd_line": ml[last], "macd_signal": sl[last], "macd_hist": hl[last],
-            "atr14": a[last], "bb_mid": bm[last], "bb_up": bu[last], "bb_lo": bl[last],
+            "atr14": a[last], "atr_ratio": atr_ratio, "z20": z[last], "adx14": ax[last], "vwap": vw[last],
+            "bb_mid": bm[last], "bb_up": bu[last], "bb_lo": bl[last],
             "vol_sma20": vsma, "rel_volume": rel_vol,
             "price_change": price_change, "price_range": rng, "position_in_range": pos,
         },
