@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from app.market_data.models import Candle
-from app.system.engine import full_trace, system_health
+from app.system.engine import full_trace, system_health, reliability, _forward_log
 
 router = APIRouter(prefix="/system", tags=["system"])
 
@@ -23,3 +23,11 @@ def trace(req: Req):
     c5 = req.candles_5m or req.candles_1m
     c15 = req.candles_15m or req.candles_1m
     return full_trace(req.candles_1m, c5, c15, req.symbol, req.equity, req.risk_pct, req.spread)
+
+@router.get("/reliability")
+def rel():
+    return reliability()
+
+@router.get("/forward")
+def fwd(limit: int = 50):
+    return {"entries": _forward_log[-limit:][::-1], "total": len(_forward_log)}

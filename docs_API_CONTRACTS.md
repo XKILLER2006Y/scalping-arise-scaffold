@@ -42,3 +42,9 @@
 
 ## Phase 10 System
 - POST /api/v1/system/trace {symbol, candles_1m, candles_5m, candles_15m, equity, risk_pct, spread} → {market, features_mtf, evaluations, signal, news, trade_plan, latency_ms}
+- GET /api/v1/system/reliability → {counts, total, no_trade_rate, forward_logged}
+- GET /api/v1/system/forward?limit=50 → {entries, total}
+
+## Production
+- backend/Dockerfile, frontend/Dockerfile, docker-compose.yml (8000 + 3000)
+- .github/workflows/ci.yml (pytest + next build)
