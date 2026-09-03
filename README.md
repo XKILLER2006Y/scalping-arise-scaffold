@@ -2,18 +2,19 @@
 
 Modular XAU/USD trading analysis platform. Scaffold-only full pipeline.
 
-## Current Status (scaffold — COMPLETE)
+## Current Status (scaffold — COMPLETE + research-hardened)
 ```
 Phase 1: Complete
 Phase 2: Complete (live Twelve Data SPOT + yfinance GC=F FUTURES_PROXY, retries, cache, failover, freshness, gaps)
-Phase 3: Complete
-Phase 4 Core + Extension: Complete (MTF 1m/5m/15m, volatility, READY/WARMING_UP/UNAVAILABLE)
-Phase 5 Strategy: Complete (TREND_CONT + RANGE_FADE evaluation)
-Phase 6 Signals: Complete (BUY/SELL/NO_TRADE, confidence vs quality, conflict resolver)
-Phase 7 Trade Plan: Complete (1.5xATR SL, 2R TP, RR, sizing, spread check — plan only)
-Phase 8 Intelligence: Complete (news blackout + PF/WR kill-switch)
-Phase 9 Backtest: Complete (metrics + PROMOTE/WAIT/REJECT gate)
-Phase 10 System: Complete (trace + health)
+Phase 3: Complete (+ liquidity sweeps + FVG detectors)
+Phase 4 Core + Extension: Complete (MTF 1m/5m/15m, volatility, READY/WARMING_UP/UNAVAILABLE, Z/ADX/ATR-ratio/VWAP)
+Phase 5 Strategy: Complete (TREND_CONT + RANGE_FADE with ADX/ATR-ratio/Z gates)
+Phase 6 Signals: Complete (BUY/SELL/NO_TRADE, killzone gate, ARMED pullback, sweep confluence, conflict resolver)
+Phase 7 Trade Plan: Complete (1.5xATR SL, 2R TP, RR, sizing, spread + cost gate, multi-TP — plan only)
+Phase 8 Intelligence: Complete (news blackout + PF/WR kill-switch + daily caps/cooldown)
+Phase 9 Backtest: Complete (metrics + PROMOTE/WAIT/REJECT gate, 10-bar time exit + costs)
+Phase 10 System: Complete (trace + health + metrics + reliability + forward log)
+Enterprise: MIT, SECURITY, request-ID logs, API key guard, rate limit, SQLite persistence, Docker/CI
 ```
 
 > Friend's real repo stays joint-locked. This is our independent reference for later comparison.
@@ -54,7 +55,7 @@ npm run dev  # or npm run build && npm start
 
 ## Testing
 ```bash
-.venv/bin/python -m pytest backend/tests -q  # 15 tests
+.venv/bin/python -m pytest backend/tests -q  # 25 tests
 ```
 
 ## API Overview
@@ -67,4 +68,11 @@ See docs_API_CONTRACTS.md. Key: /health, /market-data/*, /market-analysis, /tech
 ## Development Rules
 - Phase 4 describes, never decides. Decisions live in Phase 6+ only.
 - No look-ahead: only closed candles per TF.
+- Killzones first: LONDON/NEW_YORK confirm; ASIA/OFF review-only.
 - Analysis only. Not financial advice.
+
+## Research applied (internet round: gold-pro-scalper, BAKOME ICT, backtrader XAUUSD, nixie-gold-bot, ICT killzones)
+- Z-score>=2 + ADX<=22 fade filter; ADX>=20 + ATR-ratio 0.4-2.0 trend filter; VWAP context
+- SSL/BSL sweep + FVG detectors; sweep confluence +10 confidence
+- 4-phase entries: SCANNING→ARMED (1-3 bar pullback)→ENTRY; session-gated CONFIRMED
+- Cost gate TP>=4x cost; multi-TP 1.5R/2.5R/4R ladder; daily 10-trade cap, -5% halt, 2-loss cooldown
