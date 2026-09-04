@@ -60,6 +60,16 @@ class PaperBroker:
             if self.is_halted:
                 return {"status": "rejected", "reason": self.halt_reason}
 
+            # Global human kill switch (app/core/halt.py) — covers paper AND live paths.
+            try:
+                from app.core.halt import get_halt
+                h = get_halt()
+                if h.get("halted"):
+                    return {"status": "rejected",
+                            "reason": f"HALTED by operator: {h.get('reason') or 'no reason given'}"}
+            except Exception:
+                pass
+
             # Circuit Breaker Check
             drawdown_pct = (self.high_water_mark - self.balance) / self.high_water_mark * 100
             daily_loss_pct = (self.daily_start_balance - self.balance) / self.daily_start_balance * 100

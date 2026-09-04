@@ -32,6 +32,26 @@ def rel():
 def fwd(limit: int = 50):
     return {"entries": _forward_log[-limit:][::-1], "total": len(_forward_log)}
 
+@router.get("/heartbeat")
+def heartbeat(max_age_s: int = 90):
+    from app.core.heartbeat import status
+    return status(max_age_s)
+
+class HaltReq(BaseModel):
+    halted: bool
+    reason: str = ""
+
+@router.get("/halt")
+def halt_status():
+    from app.core.halt import get_halt
+    return get_halt()
+
+@router.post("/halt")
+def halt_set(req: HaltReq):
+    """Human kill switch. halted=true stops ALL new positions immediately."""
+    from app.core.halt import set_halt
+    return set_halt(req.halted, req.reason)
+
 @router.get("/trace-quick")
 def trace_quick(symbol: str = "XAU/USD", limit: int = 250, equity: float = 10000.0,
                 risk_pct: float = 1.0, spread: float = 0.3):

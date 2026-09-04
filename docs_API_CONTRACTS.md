@@ -80,3 +80,9 @@
 - POST /api/v1/brokers/oanda/order {instrument, units, stop_loss, take_profit, confirm_live}
   → dry-run preview by default; live fill ONLY with LIVE_TRADING=true + OANDA_ENV=live + token + confirm_live
 - Provider chain: OANDA SPOT (keyed) -> Twelve Data SPOT -> yfinance FUTURES_PROXY
+
+## Ops — reconciliation, heartbeat, kill switch
+- POST /api/v1/recon/run {mode: paper|live, local_trades} → CLEAN/DIVERGED (broker fills = truth)
+- GET /api/v1/recon/latest
+- GET /api/v1/system/heartbeat?max_age_s=90 → {alive, age_s} (loop beats every ~5s)
+- GET/POST /api/v1/system/halt {halted, reason} → human kill switch, blocks paper + live + loop

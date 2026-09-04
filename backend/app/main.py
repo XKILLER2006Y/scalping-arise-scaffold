@@ -22,6 +22,7 @@ from app.system.router import router as system_router
 from app.validation.router import router as validation_router
 from app.execution.router import router as execution_router
 from app.brokers.router import router as brokers_router
+from app.recon.router import router as recon_router
 
 logger = get_logger("scalping-arise")
 _START = __import__("time").time()
@@ -50,6 +51,8 @@ async def auto_trade_loop():
 
     reconnect_delay = float(os.environ.get("RECONNECT_DELAY", "1.0"))
     max_reconnect_delay = float(os.environ.get("MAX_RECONNECT_DELAY", "60.0"))
+    import time as _t
+    _last_beat = 0.0
 
     while True:
         try:
@@ -92,6 +95,25 @@ async def auto_trade_loop():
                     history.append(tick)
                     if len(history) > 300:
                         history.pop(0)
+
+                    # Heartbeat (throttled): proves the LOOP is alive, not just the container.
+                    try:
+                        from app.core.heartbeat import beat as _beat
+                        now_b = _t.time()
+                        if now_b - _last_beat >= 5.0:
+                            _beat("auto-loop", {"history": len(history)})
+                            _last_beat = now_b
+                    except Exception:
+                        pass
+                    # Global kill switch: halt blocks new positions (existing logic exits via SL/TP).
+                    try:
+                        from app.core.halt import get_halt as _get_halt
+                        _h = _get_halt()
+                        if _h.get("halted"):
+                            logger.warning(f"Trading halted, skipping tick: {_h.get('reason')}")
+                            continue
+                    except Exception:
+                        pass
                         
                     # Persist tick to TimescaleDB
                     from app.market_data.db import db
@@ -220,7 +242,7 @@ def create_app() -> FastAPI:
 
     for r in (market_data_router, market_analysis_router, technical_features_router,
               strategy_router, signals_router, trade_router, intel_router, backtest_router, system_router, execution_router,
-              validation_router, brokers_router):
+              validation_router, brokers_router, recon_router):
         app.include_router(r, prefix="/api/v1")
     return app
 
