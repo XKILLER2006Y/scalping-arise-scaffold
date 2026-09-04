@@ -21,6 +21,7 @@ from app.backtesting.router import router as backtest_router
 from app.system.router import router as system_router
 from app.validation.router import router as validation_router
 from app.execution.router import router as execution_router
+from app.brokers.router import router as brokers_router
 
 logger = get_logger("scalping-arise")
 _START = __import__("time").time()
@@ -219,7 +220,7 @@ def create_app() -> FastAPI:
 
     for r in (market_data_router, market_analysis_router, technical_features_router,
               strategy_router, signals_router, trade_router, intel_router, backtest_router, system_router, execution_router,
-              validation_router):
+              validation_router, brokers_router):
         app.include_router(r, prefix="/api/v1")
     return app
 

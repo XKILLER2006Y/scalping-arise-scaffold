@@ -85,23 +85,38 @@ def get_candles(symbol: str = "XAU/USD", timeframe: str = "1m", limit: int = 100
 
     t0 = time.time()
     fetch_limit = max(limit, 250)
-    primary = TwelveDataProvider(settings.twelve_data_api_key, settings.twelve_data_base_url)
-    try:
-        candles = primary.fetch_candles(symbol, timeframe, fetch_limit)
-        ms = round((time.time() - t0) * 1000, 1)
-        _provider_health["twelve_data"] = {"ok": True, "fails": 0, "latency_ms": ms,
-                                           "mode": "live" if settings.twelve_data_api_key else "demo-synthetic"}
-        meta = {"cached": False, "source": "twelve_data", "source_type": "SPOT", "failover": False}
-    except Exception as e:
-        ms = round((time.time() - t0) * 1000, 1)
-        _provider_health["twelve_data"] = {"ok": False, "fails": _provider_health["twelve_data"].get("fails", 0) + 1,
-                                           "latency_ms": ms, "error": str(e)[:200]}
-        t1 = time.time()
-        fallback = YFinanceProvider()
-        candles = fallback.fetch_candles(symbol, timeframe, fetch_limit)
-        ms2 = round((time.time() - t1) * 1000, 1)
-        _provider_health["yfinance"] = {"ok": True, "fails": 0, "latency_ms": ms2, "mode": "fallback"}
-        meta = {"cached": False, "source": "yfinance", "source_type": "FUTURES_PROXY", "failover": True}
+    # Provider chain (first success wins, source identity preserved):
+    # OANDA XAU/USD SPOT (keyed) -> Twelve Data SPOT -> yfinance GC=F FUTURES_PROXY.
+    import os
+    chain = []
+    if os.getenv("OANDA_API_KEY", ""):
+        from app.market_data.providers.oanda_provider import OandaProvider
+        chain.append(("oanda", "SPOT", False, OandaProvider()))
+    chain.append(("twelve_data", "SPOT", False,
+                  TwelveDataProvider(settings.twelve_data_api_key, settings.twelve_data_base_url)))
+    chain.append(("yfinance", "FUTURES_PROXY", True, YFinanceProvider()))
+    candles, meta, last_err = [], {}, None
+    for name, stype, is_fallback, provider in chain:
+        try:
+            t1 = time.time()
+            candles = provider.fetch_candles(symbol, timeframe, fetch_limit)
+            ms = round((time.time() - t1) * 1000, 1)
+            _provider_health[name] = {"ok": True, "fails": 0, "latency_ms": ms,
+                                      "mode": "live" if name == "oanda" or
+                                      (name == "twelve_data" and settings.twelve_data_api_key)
+                                      else ("demo-synthetic" if name == "twelve_data" else "fallback")}
+            meta = {"cached": False, "source": name, "source_type": stype,
+                    "failover": is_fallback or name != chain[0][0]}
+            break
+        except Exception as e:
+            last_err = e
+            _provider_health[name] = {"ok": False,
+                                      "fails": _provider_health.get(name, {}).get("fails", 0) + 1,
+                                      "latency_ms": round((time.time() - t1) * 1000, 1),
+                                      "error": str(e)[:200]}
+            continue
+    if not candles:
+        raise RuntimeError(f"all providers failed, last: {last_err}")
     _cache_put(k, (now, candles))
     out = candles[-limit:]
     if out:

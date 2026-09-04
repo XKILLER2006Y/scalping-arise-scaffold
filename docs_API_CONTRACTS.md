@@ -72,3 +72,11 @@
 - POST /api/v1/validation/monte-carlo {candles} → trade shuffle 1000x: P(negative), p5 net, p95 DD
 - POST /api/v1/validation/sensitivity {candles, grid?} → sl×tp×conf grid + CLIFF_RISK/STABLE verdict
 - POST /api/v1/validation/full-audit {candles, folds, grid?} → base + WF + MC + sensitivity + 30%-of-B&H benchmark → PROMOTE/WAIT/REJECT
+
+## Brokers — OANDA v20 (practice-first)
+- GET /api/v1/brokers/oanda/health → {env, configured, live_armed}
+- GET /api/v1/brokers/oanda/candles?instrument=XAU_USD&granularity=M1&count=100
+- GET /api/v1/brokers/oanda/price?instruments=XAU_USD, /account
+- POST /api/v1/brokers/oanda/order {instrument, units, stop_loss, take_profit, confirm_live}
+  → dry-run preview by default; live fill ONLY with LIVE_TRADING=true + OANDA_ENV=live + token + confirm_live
+- Provider chain: OANDA SPOT (keyed) -> Twelve Data SPOT -> yfinance FUTURES_PROXY
