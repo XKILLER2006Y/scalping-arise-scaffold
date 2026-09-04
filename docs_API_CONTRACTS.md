@@ -86,3 +86,9 @@
 - GET /api/v1/recon/latest
 - GET /api/v1/system/heartbeat?max_age_s=90 → {alive, age_s} (loop beats every ~5s)
 - GET/POST /api/v1/system/halt {halted, reason} → human kill switch, blocks paper + live + loop
+
+## Exits + portfolio (Wave 2)
+- Chandelier trail (k=2.5, 22-bar window): ratchets only, TP1→breakeven, TP3 cap
+- Backtest `exit_mode`: fixed (default) | trail
+- Paper broker: plan["trail"]={enabled,k,tp1,tp_cap} attaches trailing state per position
+- Portfolio cap: max 2 same-direction per symbol, 5 open total, 3% book risk — enforced in broker + checked pre-trade

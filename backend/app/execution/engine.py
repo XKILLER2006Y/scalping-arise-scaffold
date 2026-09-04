@@ -118,9 +118,24 @@ class PaperBroker:
             except (ValueError, TypeError):
                 tp_val = None
 
+            # Portfolio correlation cap: never stack the same bet (research: five
+            # "independent" 1% trades that move together are one 5% trade).
+            try:
+                from app.intelligence.portfolio import check as _pf_check
+                _gate = _pf_check(list(self.open_positions), direction,
+                                  plan.get("symbol", "XAU/USD"),
+                                  float(plan.get("risk_money", 0.0) or 0.0),
+                                  self.balance)
+                if not _gate.get("allowed"):
+                    return {"status": "rejected", "reason": _gate.get("reason")}
+            except Exception:
+                pass
+
             position = {
                 "id": int(time.time_ns()),
                 "direction": direction,
+                "symbol": plan.get("symbol", "XAU/USD"),
+                "risk_money": float(plan.get("risk_money", 0.0) or 0.0),
                 "entry": float(entry_price),
                 "sl": sl_val,
                 "tp": tp_val,
@@ -128,6 +143,21 @@ class PaperBroker:
                 "status": "OPEN",
                 "timestamp": int(time.time()),
             }
+            # Optional trailing exit: plan["trail"] = {"k": 2.5, "tp1": px, "tp_cap": px}.
+            # ATR proxied from stop distance (sl = sl_mult * ATR, default mult 1.5).
+            try:
+                tcfg = plan.get("trail") or {}
+                if tcfg.get("enabled"):
+                    from app.trade_planning.trail import new_trail_state
+                    slm = float(plan.get("sl_mult", 1.5) or 1.5)
+                    atr_px = abs(float(entry_price) - float(sl_val)) / slm if sl_val else None
+                    position["trail"] = new_trail_state(
+                        direction, float(entry_price), float(sl_val) if sl_val else float(entry_price),
+                        tcfg.get("tp1"), tcfg.get("tp_cap"))
+                    position["trail_atr"] = atr_px
+                    position["trail_k"] = float(tcfg.get("k", 2.5) or 2.5)
+            except Exception:
+                pass
             self.open_positions.append(position)
             return {"status": "filled", "position": position}
 
@@ -152,6 +182,26 @@ class PaperBroker:
                 hit_sl = False
                 hit_tp = False
                 exit_px = c
+
+                # Trailing stop first: ratchets the stop, may exit on trail touch.
+                if p.get("trail") is not None and p.get("trail_atr"):
+                    try:
+                        from app.trade_planning.trail import update_trail
+                        tr = update_trail(p["trail"], h, l, p["trail_atr"], p.get("trail_k", 2.5))
+                        p["sl"] = tr["stop"]
+                        if tr["exit"]:
+                            exit_px = tr["exit_price"]
+                            pnl = (exit_px - p["entry"]) * p["size"] * CONTRACT_OZ if p["direction"] == "LONG" else (p["entry"] - exit_px) * p["size"] * CONTRACT_OZ
+                            p["exit"] = exit_px
+                            p["pnl"] = round(pnl, 2)
+                            p["status"] = "CLOSED"
+                            p["exit_reason"] = tr["reason"]
+                            self.balance += pnl
+                            self.trade_history.append(p)
+                            closed.append(p)
+                            continue
+                    except Exception:
+                        pass
 
                 if p["direction"] == "LONG":
                     if p.get("sl") is not None and l <= p["sl"]:
