@@ -1,78 +1,42 @@
-# Scalping Arise — our XAU/USD trading analysis platform
+# XAU/USD Signal Bot
 
-Modular XAU/USD trading analysis platform. Scaffold-only full pipeline.
+Past + live market data in — **BUY / SELL / NO_TRADE** out. Nothing else.
+No execution, no brokers, no auto-trading, no ML baggage.
 
-## Current Status (scaffold — COMPLETE + research-hardened)
+## How it works
+
 ```
-Phase 1: Complete
-Phase 2: Complete (live Twelve Data SPOT + yfinance GC=F FUTURES_PROXY, retries, cache, failover, freshness, gaps)
-Phase 3: Complete (+ liquidity sweeps + FVG detectors)
-Phase 4 Core + Extension: Complete (MTF 1m/5m/15m, volatility, READY/WARMING_UP/UNAVAILABLE, Z/ADX/ATR-ratio/VWAP)
-Phase 5 Strategy: Complete (TREND_CONT + RANGE_FADE with ADX/ATR-ratio/Z gates)
-Phase 6 Signals: Complete (BUY/SELL/NO_TRADE, killzone gate, ARMED pullback, sweep confluence, conflict resolver)
-Phase 7 Trade Plan: Complete (1.5xATR SL, 2R TP, RR, sizing, spread + cost gate, multi-TP — plan only)
-Phase 8 Intelligence: Complete (news blackout + PF/WR kill-switch + daily caps/cooldown)
-Phase 9 Backtest: Complete (metrics + PROMOTE/WAIT/REJECT gate, 10-bar time exit + costs)
-Phase 10 System: Complete (trace + health + metrics + reliability + forward log)
-Enterprise: MIT, SECURITY, request-ID logs, API key guard, rate limit, SQLite persistence, Docker/CI
+Twelve Data XAU/USD SPOT (yfinance GC=F fallback, labeled FUTURES_PROXY)
+  → Market structure (swings, BOS/CHOCH, sweeps, FVGs, sessions, regimes)
+  → MTF features 1m/5m/15m (EMA/RSI/MACD/ATR/Z/ADX/VWAP/BB, adaptive volatility)
+  → 3 strategies (trend-continuation, pullback-continuation, range-fade)
+    + eligibility gate + invalidation vetoes
+  → Signal decision (killzone sessions, pullback states, conflict resolver)
+  → Entry/SL/TP/RR plan + news/exposure filters
 ```
 
-> Solo build. Our architecture, our rules, our best.
+One call: `GET /api/v1/signal?symbol=XAU/USD`
 
-## Architecture
-```
-Market Data -> Structure/Regime -> Features MTF -> Strategy Eval -> Signal Decide -> Trade Plan -> Intel/News -> Backtest -> Trace/Health
-```
+## Run
 
-## Structure
-```
-backend/app/main.py — factory v0.10.0-scaffold
-backend/app/core/, market_data/, market_analysis/, technical_features/
-backend/app/strategy/, signals/, trade_planning/, intelligence/, backtesting/, system/
-frontend/app/page.tsx + layout.tsx, frontend/lib/api.ts — full pipeline dashboard
-docs_API_CONTRACTS.md — endpoint inventory
-docs_PHASE4_EXTENSION_PROPOSAL.md — original proposal
-```
-
-## Prerequisites
-Python 3.11+, Node 18+
-
-## Backend Setup
 ```bash
-cd /home/arifureta/Desktop/scalping-arise-scaffold
+cd backend && ../.venv/bin/python -m uvicorn app.main:app --app-dir . --port 8000
+cd frontend && npm install && npm run dev   # http://localhost:3000
+```
+
+```bash
 .venv/bin/python -m pytest backend/tests -q
-.venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
-# live data: set backend/.env SCALPING_ARISE_TWELVE_DATA_API_KEY=... (else demo-synthetic SPOT)
 ```
 
-## Frontend Setup
-```bash
-cd frontend
-cp .env.example .env.local
-npm install
-npm run dev  # or npm run build && npm start
-```
+## Proof, not promises
 
-## Testing
-```bash
-.venv/bin/python -m pytest backend/tests -q  # 25 tests
-```
+`POST /validation/full-audit` — walk-forward + Monte Carlo + sensitivity grid +
+30%-of-B&H benchmark → PROMOTE/WAIT/REJECT. Latest real-data trials: WAIT then
+REJECT. The bot reports its own report card; read it before trusting any signal.
 
-## API Overview
-See docs_API_CONTRACTS.md. Key: /health, /market-data/*, /market-analysis, /technical-features + /mtf, /strategy/evaluate, /signals/decide, /trade-plan, /intelligence/*, /backtest/run, /system/trace + /health
+## Rules
 
-## Data Source Warning
-- Twelve Data XAU/USD = SPOT
-- yfinance GC=F = FUTURES_PROXY — never equal to spot. source_type preserved end-to-end.
-
-## Development Rules
-- Phase 4 describes, never decides. Decisions live in Phase 6+ only.
-- No look-ahead: only closed candles per TF.
-- Killzones first: LONDON/NEW_YORK confirm; ASIA/OFF review-only.
-- Analysis only. Not financial advice.
-
-## Research applied (internet round: gold-pro-scalper, BAKOME ICT, backtrader XAUUSD, nixie-gold-bot, ICT killzones)
-- Z-score>=2 + ADX<=22 fade filter; ADX>=20 + ATR-ratio 0.4-2.0 trend filter; VWAP context
-- SSL/BSL sweep + FVG detectors; sweep confluence +10 confidence
-- 4-phase entries: SCANNING→ARMED (1-3 bar pullback)→ENTRY; session-gated CONFIRMED
-- Cost gate TP>=4x cost; multi-TP 1.5R/2.5R/4R ladder; daily 10-trade cap, -5% halt, 2-loss cooldown
+- HTF bias → structure → entry. Never fade the higher-timeframe trend.
+- LONDON/NEW_YORK confirm; ASIA/OFF review-only.
+- Closed candles only. No look-ahead. Source identity preserved end to end.
+- Signals only. Not financial advice.

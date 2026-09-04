@@ -1,60 +1,19 @@
-version: '3.8'
-
 services:
-  timescaledb:
-    image: timescale/timescaledb:latest-pg14
-    container_name: scalping-arise-timescaledb
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=market_data
-    ports:
-      - "5432:5432"
-    volumes:
-      - timescaledb-data:/var/lib/postgresql/data
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:alpine
-    container_name: scalping-arise-redis
-    ports:
-      - "6379:6379"
-    restart: always
-
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: scalping-arise-backend
     ports:
       - "8000:8000"
-    environment:
-      - TIMESCALE_DSN=postgres://postgres:postgres@timescaledb:5432/market_data
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_started
+    env_file:
+      - ./backend/.env
     restart: always
-
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: scalping-arise-frontend
+    build: ./frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - backend
     restart: always
-
-volumes:
-  timescaledb-data:

@@ -86,12 +86,8 @@ def get_candles(symbol: str = "XAU/USD", timeframe: str = "1m", limit: int = 100
     t0 = time.time()
     fetch_limit = max(limit, 250)
     # Provider chain (first success wins, source identity preserved):
-    # OANDA XAU/USD SPOT (keyed) -> Twelve Data SPOT -> yfinance GC=F FUTURES_PROXY.
-    import os
+    # Twelve Data XAU/USD SPOT -> yfinance GC=F FUTURES_PROXY.
     chain = []
-    if os.getenv("OANDA_API_KEY", ""):
-        from app.market_data.providers.oanda_provider import OandaProvider
-        chain.append(("oanda", "SPOT", False, OandaProvider()))
     chain.append(("twelve_data", "SPOT", False,
                   TwelveDataProvider(settings.twelve_data_api_key, settings.twelve_data_base_url)))
     chain.append(("yfinance", "FUTURES_PROXY", True, YFinanceProvider()))

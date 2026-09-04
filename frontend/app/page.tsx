@@ -1,115 +1,56 @@
 "use client";
 import { useState } from "react";
 import { api } from "../lib/api";
-import { Chart } from "../components/Chart";
 
 function Card({ title, children }: any) {
   return (<div style={{ border: "1px solid #222", borderRadius: 8, padding: 12, marginBottom: 12, background: "#11141c" }}>
     <h3 style={{ margin: "0 0 8px" }}>{title}</h3>{children}</div>);
 }
 function Pre({ data }: any) {
-  return (<pre style={{ whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 300, overflow: "auto" }}>{JSON.stringify(data, null, 2)}</pre>);
+  return (<pre style={{ whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 320, overflow: "auto" }}>{JSON.stringify(data, null, 2)}</pre>);
 }
+const COLORS: any = { BUY: "#1db954", SELL: "#e5484d", NO_TRADE: "#888" };
 export default function Page() {
-  const [out, setOut] = useState<any>({});
-  const [busy, setBusy] = useState("");
+  const [sig, setSig] = useState<any>(null);
+  const [hist, setHist] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [extra, setExtra] = useState<any>({});
+  async function getSignal() {
+    setBusy(true);
+    try {
+      const s: any = await api.signal();
+      setSig(s);
+      setHist((h) => [{ t: new Date().toLocaleTimeString(), action: s.signal?.action, conf: s.signal?.confidence, px: s.trade_plan?.entry }, ...h].slice(0, 20));
+    } catch (e: any) { setSig({ error: String(e) }); }
+    setBusy(false);
+  }
   async function run(key: string, fn: () => Promise<any>) {
-    setBusy(key);
     try {
       const v = await fn();
-      setOut((o: any) => ({ ...o, [key]: v }));
+      setExtra((o: any) => ({ ...o, [key]: v }));
     }
-    catch (e: any) { setOut((o: any) => ({ ...o, [key]: { error: String(e) } })); }
-    setBusy("");
+    catch (e: any) { setExtra((o: any) => ({ ...o, [key]: { error: String(e) } })); }
   }
-  async function stepByStep() {
-    setBusy("steps");
-    try {
-      const c1: any = await api.candles("1m", 250);
-      const candles = c1?.candles || [];
-      if (candles.length === 0) throw new Error("No candles returned from market data");
-
-      const analysis: any = await api.analysis(candles.slice(-120));
-      const feat: any = await api.features(candles.slice(-220), "1m");
-      const featData = feat?.features || {};
-      const feats = { ...featData, volatility: feat?.volatility, rel_volume: featData.rel_volume };
-      const closePx = candles[candles.length - 1].close;
-      const ev: any = await api.evaluate(analysis, feats, closePx);
-      const sig: any = await api.decide(ev?.evaluations || [], feats);
-      const pl: any = await api.plan(sig, closePx, featData.atr14);
-      
-      let exec: any = { status: "skipped" };
-      if (pl?.feasible && sig?.action && sig.action !== "NO_TRADE") {
-        exec = await api.execute({
-          action: sig.action,
-          direction: sig.direction,
-          entry_price: pl.entry,
-          stop_loss: pl.stop,
-          take_profit_1: pl.take_profit,
-          position_size: pl.lots,
-          ...pl
-        });
-      }
-      const port: any = await api.portfolio();
-      setOut((o: any) => ({
-        ...o,
-        steps: { candles: c1?.meta, analysis, features: feat, evaluations: ev, signal: sig, plan: pl, execution: exec, portfolio: port },
-        fullCandles: candles,
-        signals: [sig]
-      }));
-    } catch (e: any) { setOut((o: any) => ({ ...o, steps: { error: String(e) } })); }
-    setBusy("");
-  }
-  async function fullPipeline() {
-    setBusy("pipe");
-    try {
-      const c1: any = await api.candles("1m", 250);
-      const candles = c1?.candles || [];
-      if (candles.length === 0) throw new Error("No candles returned from market data");
-
-      const trace: any = await api.trace(candles, candles.slice(-120), candles.slice(-80));
-      const bt: any = await api.backtest(candles.slice(-300));
-      const rel: any = await api.reliability();
-      setOut((o: any) => ({
-        ...o,
-        pipeline: { trace, backtest: bt, reliability: rel },
-        fullCandles: candles,
-        signals: trace?.signal ? [trace.signal] : []
-      }));
-    } catch (e: any) { setOut((o: any) => ({ ...o, pipeline: { error: String(e) } })); }
-    setBusy("");
-  }
-  const B = (k: string, label: string, fn: () => Promise<any>) => (
-    <button onClick={() => run(k, fn)} disabled={!!busy} style={{ marginRight: 6, marginBottom: 6 }}>
-      {busy === k ? "Loading…" : label}
-    </button>
-  );
-  return (<main style={{ padding: 20, maxWidth: 1100, margin: "0 auto", fontFamily: "monospace" }}>
-    <h1>Scalping Arise — full project (Phases 1-10)</h1>
-    <p style={{ color: "#9aa" }}>XAU/USD SPOT vs GC=F FUTURES_PROXY preserved · Analysis only, not financial advice.</p>
-    <div>
-      {B("health", "Health", api.health)}
-      {B("mdHealth", "Market-data", api.mdHealth)}
-      {B("sysHealth", "System", api.sysHealth)}
-      {B("news", "News check", api.news)}
-      {B("rel", "Reliability", api.reliability)}
-      {B("fwd", "Forward log", api.forward)}
-      {B("portfolio", "Paper Portfolio", api.portfolio)}
-      <button onClick={stepByStep} disabled={!!busy}>{busy === "steps" ? "Running steps…" : "Step-by-step (P2→P7+Exec)"}</button>{" "}
-      <button onClick={fullPipeline} disabled={!!busy}>{busy === "pipe" ? "Running…" : "Full trace + backtest"}</button>
-    </div>
-    
-    {(out.fullCandles && out.fullCandles.length > 0) && (
-      <div style={{ marginTop: 24, marginBottom: 24 }}>
-        <h3>Interactive Chart</h3>
-        <Chart candles={out.fullCandles} signals={out.signals || []} features={out.steps?.features} />
+  const action = sig?.signal?.action || "—";
+  return (<main style={{ padding: 20, maxWidth: 900, margin: "0 auto", fontFamily: "monospace" }}>
+    <h1>XAU/USD Signal Bot</h1>
+    <p style={{ color: "#9aa" }}>Past + live market data in — BUY / SELL / NO_TRADE out. Signals only, no execution. Not financial advice.</p>
+    <button onClick={getSignal} disabled={busy} style={{ fontSize: 18, padding: "10px 24px" }}>
+      {busy ? "Analysing…" : "Get Signal"}
+    </button>{" "}
+    <button onClick={() => run("health", api.sysHealth)}>System</button>{" "}
+    <button onClick={() => run("rel", api.reliability)}>Reliability</button>
+    {sig && !sig.error && (
+      <div style={{ border: `3px solid ${COLORS[action] || "#888"}`, borderRadius: 12, padding: 16, margin: "16px 0", background: "#11141c" }}>
+        <div style={{ fontSize: 42, fontWeight: "bold", color: COLORS[action] || "#fff" }}>{action}</div>
+        <div>Confidence {sig.signal?.confidence} · Quality {sig.signal?.quality} · {sig.signal?.strategy || "no setup"}</div>
+        <div>Entry {sig.trade_plan?.entry} · SL {sig.trade_plan?.stop} · TP {sig.trade_plan?.take_profit} · RR {sig.trade_plan?.rr}</div>
+        <div style={{ color: "#9aa" }}>{(sig.signal?.reasons || []).join(" · ")}</div>
+        <div style={{ color: "#666", fontSize: 12 }}>Session {sig.market?.session} · Regime {sig.market?.regime} · Vol {sig.features_mtf?.timeframes?.["1m"]?.volatility} · {sig.latency_ms}ms</div>
       </div>
     )}
-
-    <div style={{ marginTop: 12 }}>
-      <Card title="Status">{["health", "mdHealth", "sysHealth", "news", "rel", "fwd", "portfolio"].map(k => out[k] ? <Pre key={k} data={{ [k]: out[k] }} /> : null)}</Card>
-      <Card title="Step-by-step P2→P7+Exec">{out.steps ? <Pre data={out.steps} /> : <span style={{ color: "#777" }}>Run step-by-step.</span>}</Card>
-      <Card title="Trace + backtest + reliability">{out.pipeline ? <Pre data={out.pipeline} /> : <span style={{ color: "#777" }}>Run full trace.</span>}</Card>
-    </div>
+    {sig?.error && <Card title="Error"><Pre data={sig} /></Card>}
+    <Card title="Signal history (this session)">{hist.length ? <Pre data={hist} /> : <span style={{ color: "#777" }}>No signals yet.</span>}</Card>
+    {extra.health || extra.rel ? <Card title="System"><Pre data={extra} /></Card> : null}
   </main>);
 }

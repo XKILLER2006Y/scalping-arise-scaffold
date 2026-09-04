@@ -46,8 +46,7 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
                  warmup: int = 200, horizon: int = 10, cost_per_trade: float = 0.3,
                  sl_mult: float = 1.5, tp_mult: float = 2.0, min_conf: int = 60,
                  return_all_trades: bool = False, window: int = 400,
-                 prep: list[dict] | None = None,
-                 exit_mode: str = "fixed", trail_k: float = 2.5) -> dict:
+                 prep: list[dict] | None = None) -> dict:
     trades: list[dict] = []
     equity_curve = [equity]
     cur = equity
@@ -67,38 +66,10 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
                    sl_mult=sl_mult, tp_mult=tp_mult)
         if not p.get("feasible"):
             continue
-        # simulate next `horizon` candles: SL/TP touch (fixed) or Chandelier
-        # trail with TP cap (trail). Trail may run past horizon (cap: 6x).
+        # simulate next `horizon` candles: SL/TP touch.
         entry, sl, tp = p["entry"], p["stop"], p["take_profit"]
         direction = sig["direction"]
         exit_px, res = None, "TIME"
-        if exit_mode == "trail" and feats.get("atr14"):
-            from app.trade_planning.trail import new_trail_state, update_trail
-            multis = {m["name"]: m["price"] for m in (p.get("multi_tp") or [])}
-            tstate = new_trail_state(direction, entry, sl,
-                                     multis.get("TP1"), multis.get("TP3") or tp)
-            sim_end = min(i + 1 + max(horizon, 60), len(candles))
-            for k in range(i + 1, sim_end):
-                tr = update_trail(tstate, candles[k].high, candles[k].low,
-                                  feats["atr14"], trail_k)
-                if tr["exit"]:
-                    exit_px, res = tr["exit_price"], tr["reason"]
-                    break
-            if exit_px is None:
-                exit_px = candles[min(i + horizon, len(candles) - 1)].close
-            risk_dist = abs(entry - sl) or 1e-9
-            r_mult = ((exit_px - entry) if direction == "LONG" else (entry - exit_px)) / risk_dist
-            risk_money = cur * risk_pct / 100.0
-            pnl = r_mult * risk_money - cost_per_trade
-            cur += pnl
-            equity_curve.append(cur)
-            peak = max(peak, cur)
-            max_dd = max(max_dd, (peak - cur) / peak * 100 if peak else 0)
-            trades.append({"i": i, "strategy": sig["strategy"], "direction": direction,
-                           "entry": entry, "exit": round(exit_px, 2), "r": round(r_mult, 2),
-                           "pnl": round(pnl, 2), "result": res})
-            cooldown_until = i + horizon
-            continue
         for k in range(i + 1, min(i + 1 + horizon, len(candles))):
             h, l = candles[k].high, candles[k].low
             if direction == "LONG":

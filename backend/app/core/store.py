@@ -20,7 +20,6 @@ def _init_db():
         c.execute("PRAGMA synchronous=NORMAL;")
         c.execute("CREATE TABLE IF NOT EXISTS signals (id INTEGER PRIMARY KEY AUTOINCREMENT, t INTEGER, action TEXT, state TEXT, strategy TEXT)")
         c.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, t INTEGER, event TEXT, detail TEXT)")
-        c.execute("CREATE TABLE IF NOT EXISTS recon (id INTEGER PRIMARY KEY AUTOINCREMENT, t INTEGER, mode TEXT, report TEXT)")
         c.commit()
         c.close()
         _INIT_DONE = True
@@ -77,29 +76,3 @@ def recent_signals(limit: int = 500) -> list[dict]:
         return [{"t": t, "action": a, "state": s, "strategy": st} for t, a, s, st in rows]
     except Exception:
         return []
-
-
-def save_recon(mode: str, report_json: str) -> int | None:
-    try:
-        c = _conn()
-        cur = c.execute("INSERT INTO recon (t, mode, report) VALUES (?,?,?)",
-                        (int(__import__("time").time()), mode, report_json))
-        c.commit()
-        rid = cur.lastrowid
-        c.close()
-        return rid
-    except Exception:
-        return None
-
-
-def latest_recon() -> dict | None:
-    try:
-        import json as _json
-        c = _conn()
-        row = c.execute("SELECT t, mode, report FROM recon ORDER BY id DESC LIMIT 1").fetchone()
-        c.close()
-        if not row:
-            return None
-        return {"t": row[0], "mode": row[1], "report": _json.loads(row[2])}
-    except Exception:
-        return None
