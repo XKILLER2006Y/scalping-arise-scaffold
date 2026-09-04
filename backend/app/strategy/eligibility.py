@@ -35,8 +35,10 @@ def check_eligibility(strategy_id: str, analysis: dict, features: dict,
     add("features_ready", feats_ready,
         "ema20/rsi14/atr14 present" if feats_ready else "Missing core features (still warming up?)")
     # All three strategies allow FUTURES_PROXY (friend's FUTURES_PROXY_ALLOWED policy).
-    add("source_compatible", source_type in ("SPOT", "FUTURES_PROXY"),
-        f"source_type={source_type}")
+    # Normalize: callers may pass the enum itself, "SPOT", or "SourceType.SPOT".
+    st = str(getattr(source_type, "value", source_type)).split(".")[-1]
+    add("source_compatible", st in ("SPOT", "FUTURES_PROXY"),
+        f"source_type={st}")
     ok_regimes = STRATEGY_REGIMES.get(strategy_id, ())
     add("regime_compatible", (analysis.get("trend") if analysis else None) in ok_regimes,
         f"trend={analysis.get('trend') if analysis else None}, needs one of {ok_regimes}")

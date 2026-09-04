@@ -85,7 +85,9 @@ def classify_trend(candles: list[Candle]) -> str:
         return "DOWNTREND"
     return "RANGE"
 
-def analyze(candles: list[Candle], symbol: str = "XAU/USD") -> AnalysisResult:
+def analyze(candles: list[Candle], symbol: str = "XAU/USD", now_ts: int | None = None) -> AnalysisResult:
+    """now_ts: reference timestamp for session classification. Defaults to live UTC;
+    backtests MUST pass the bar's timestamp (else all history gets today's session)."""
     highs, lows = detect_swings(candles)
     trend = classify_trend(candles)
     bos = bool(highs and candles[-1].close > candles[highs[-1]].high) or bool(lows and candles[-1].close < candles[lows[-1]].low)
@@ -99,7 +101,8 @@ def analyze(candles: list[Candle], symbol: str = "XAU/USD") -> AnalysisResult:
     res = sorted(set(round(c.high, 2) for c in candles[-30:]))[-3:] if candles else []
     st = candles[0].source_type if candles else SourceType.SPOT
     import datetime
-    hr = datetime.datetime.now(datetime.timezone.utc).hour
+    ref = now_ts if now_ts is not None else int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    hr = datetime.datetime.fromtimestamp(ref, datetime.timezone.utc).hour
     sess = "LONDON" if 7 <= hr < 12 else ("NEW_YORK" if 12 <= hr < 17 else ("ASIA" if hr >= 22 or hr < 7 else "OFF"))
     return AnalysisResult(symbol=symbol, trend=trend, regime=regime, session=sess,
                           swings_high=highs[-5:], swings_low=lows[-5:], bos=bos, choch=choch,

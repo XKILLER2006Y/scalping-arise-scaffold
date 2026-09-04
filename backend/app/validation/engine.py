@@ -11,7 +11,7 @@ Answers the internet's #1 question — "was it edge or curve-fit?" — with:
 from __future__ import annotations
 import random
 from app.market_data.models import Candle
-from app.backtesting.engine import run_backtest
+from app.backtesting.engine import run_backtest, prepare_bars
 
 PARAM_GRID = {
     "sl_mult": [1.0, 1.5, 2.0],
@@ -40,16 +40,18 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
         if len(is_c) <= warmup + 10 or len(oos_c) < 20:
             continue
         best, best_pf = None, -1.0
+        is_prep = prepare_bars(is_c, warmup)
         for sl in grid["sl_mult"]:
             for tp in grid["tp_mult"]:
                 for mc in grid["min_conf"]:
-                    r = run_backtest(is_c, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc)
+                    r = run_backtest(is_c, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc, prep=is_prep)
                     pf = _pf_of(r)
                     if r["trades"] >= 5 and pf > best_pf:
                         best, best_pf = (sl, tp, mc), pf
         if best is None:
             continue
-        oos = run_backtest(oos_c, equity, risk_pct, warmup, 10, 0.3, *best)
+        oos = run_backtest(oos_c, equity, risk_pct, warmup, 10, 0.3, *best,
+                                prep=prepare_bars(oos_c, warmup))
         # Collect OOS trade pnls for Monte Carlo.
         oos_trades.extend(oos.get("sample", []))
         eff = (_pf_of(oos) / best_pf) if best_pf > 0 else 0.0
@@ -62,31 +64,36 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
             "note": "Efficiency>=0.5 across >=2 folds = edge survives unseen data"}
 
 
-def monte_carlo(trade_pnls: list[float], sims: int = 1000, seed: int = 7) -> dict:
+def monte_carlo(trade_pnls: list[float], sims: int = 1000, seed: int = 7,
+                equity: float = 10000.0) -> dict:
+    """Order-shuffle Monte Carlo. Net total is order-invariant, so this measures
+    PATH risk: max-drawdown and losing-streak distributions across orderings."""
     rng = random.Random(seed)
     if not trade_pnls:
-        return {"sims": 0, "p_negative": None, "p5_net": None, "median_net": None,
-                "p95_dd": None, "verdict": "NO_TRADES"}
-    nets, dds = [], []
+        return {"sims": 0, "p_bad_path": None, "p95_max_dd_pct": None,
+                "median_max_dd_pct": None, "p95_max_consec_losses": None,
+                "verdict": "NO_TRADES"}
+    bad, dds, streaks = 0, [], []
     for _ in range(sims):
         order = trade_pnls[:]
         rng.shuffle(order)
-        cur, peak, mdd, net = 0.0, 0.0, 0.0, 0.0
-        for p in order:
-            net += p
-            cur = net
+        cur, peak, mdd, consec, worst_streak = equity, equity, 0.0, 0, 0
+        for pnl in order:
+            cur += pnl
             peak = max(peak, cur)
-            base = peak if peak > 0 else 1.0
-            mdd = max(mdd, (peak - cur) / base * 100)
-        nets.append(net)
+            mdd = max(mdd, (peak - cur) / peak * 100 if peak else 0)
+            consec = consec + 1 if pnl <= 0 else 0
+            worst_streak = max(worst_streak, consec)
         dds.append(mdd)
-    nets.sort()
-    p_neg = sum(1 for x in nets if x < 0) / sims
-    out = {"sims": sims, "p_negative": round(p_neg, 3),
-           "p5_net": round(nets[int(0.05 * sims)], 2),
-           "median_net": round(nets[sims // 2], 2),
-           "p95_dd_pct": round(sorted(dds)[int(0.95 * sims)], 2),
-           "verdict": "ROBUST" if p_neg < 0.2 and nets[int(0.05 * sims)] > 0 else "FRAGILE"}
+        streaks.append(worst_streak)
+        if mdd > 10.0 or worst_streak >= 8:
+            bad += 1
+    dds.sort()
+    out = {"sims": sims, "p_bad_path": round(bad / sims, 3),
+           "p95_max_dd_pct": round(dds[int(0.95 * sims)], 2),
+           "median_max_dd_pct": round(dds[sims // 2], 2),
+           "p95_max_consec_losses": sorted(streaks)[int(0.95 * sims)],
+           "verdict": "ROBUST" if bad / sims < 0.2 else "FRAGILE"}
     return out
 
 
@@ -94,10 +101,11 @@ def sensitivity(candles: list[Candle], equity: float = 10000.0, risk_pct: float 
                 warmup: int = 200, grid: dict | None = None) -> dict:
     grid = grid or PARAM_GRID
     rows = []
+    prep = prepare_bars(candles, warmup)
     for sl in grid["sl_mult"]:
         for tp in grid["tp_mult"]:
             for mc in grid["min_conf"]:
-                r = run_backtest(candles, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc)
+                r = run_backtest(candles, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc, prep=prep)
                 rows.append({"sl_mult": sl, "tp_mult": tp, "min_conf": mc,
                              "trades": r["trades"], "pf": round(_pf_of(r), 2), "net": r["net_pnl"]})
     good = [x for x in rows if x["pf"] >= 1.2 and x["trades"] >= 5]
@@ -126,7 +134,8 @@ def benchmark_gate(candles: list[Candle], net_pnl: float, equity: float = 10000.
 
 def full_audit(candles: list[Candle], equity: float = 10000.0, risk_pct: float = 1.0,
                warmup: int = 200, folds: int = 3, grid: dict | None = None) -> dict:
-    base = run_backtest(candles, equity, risk_pct, warmup, return_all_trades=True)
+    base = run_backtest(candles, equity, risk_pct, warmup, return_all_trades=True,
+                             prep=prepare_bars(candles, warmup))
     wf = walk_forward(candles, folds, equity, risk_pct, warmup, grid)
     mc = monte_carlo([t["pnl"] for t in base.get("trades_full", [])])
     sens = sensitivity(candles, equity, risk_pct, warmup, grid)
@@ -135,7 +144,7 @@ def full_audit(candles: list[Candle], equity: float = 10000.0, risk_pct: float =
     if wf["verdict"] != "ROBUST":
         reasons.append(f"walk-forward {wf['verdict']} (eff {wf['avg_wf_efficiency']})")
     if mc.get("verdict") != "ROBUST":
-        reasons.append(f"monte-carlo {mc.get('verdict')} (P(neg)={mc.get('p_negative')})")
+        reasons.append(f"monte-carlo {mc.get('verdict')} (P(bad-path)={mc.get('p_bad_path')})")
     if sens["verdict"] != "STABLE":
         reasons.append(f"sensitivity {sens['verdict']} ({sens['stable_fraction_pf_ge_1_2']})")
     if not bench["passed"]:

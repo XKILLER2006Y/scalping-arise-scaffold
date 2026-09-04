@@ -6,26 +6,52 @@ from app.strategy.engine import evaluate_all
 from app.signals.engine import decide
 from app.trade_planning.engine import plan
 
+def prepare_bars(candles: list[Candle], warmup: int = 200, window: int = 400) -> list[dict]:
+    """Expensive part, done ONCE: per-bar analysis + features + strategy evaluations.
+
+    Param-dependent steps (confidence threshold, SL/TP sizing, simulation) stay
+    in run_backtest, so a 27-combo sensitivity grid costs 1x precompute + 27x cheap sims
+    instead of 27x full pipelines.
+    """
+    bars: list[dict] = []
+    for i in range(warmup, len(candles)):
+        hist = candles[max(0, i + 1 - window):i + 1]
+        a = analyze(hist, now_ts=candles[i].timestamp)
+        f = compute_single_timeframe(hist, "1m")
+        feats = dict(f["features"])
+        feats["volatility"] = f["volatility"]
+        feats["rel_volume"] = f["features"].get("rel_volume")
+        closes = [c.close for c in hist]
+        evs = evaluate_all(a.model_dump(), feats, hist[-1].close, closes=closes,
+                           candle_count=len(hist),
+                           source_type=str(hist[0].source_type))
+        bars.append({"i": i, "entry": hist[-1].close, "atr": feats.get("atr14"),
+                     "feats": feats, "evs": evs,
+                     "ctx": {"session": a.session, "closes": closes[-10:],
+                             "analysis": a.model_dump()}})
+    return bars
+
+
 def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float = 1.0,
                  warmup: int = 200, horizon: int = 10, cost_per_trade: float = 0.3,
                  sl_mult: float = 1.5, tp_mult: float = 2.0, min_conf: int = 60,
-                 return_all_trades: bool = False) -> dict:
+                 return_all_trades: bool = False, window: int = 400,
+                 prep: list[dict] | None = None) -> dict:
     trades: list[dict] = []
     equity_curve = [equity]
     cur = equity
     peak, max_dd = equity, 0.0
-    for i in range(warmup, len(candles) - horizon):
-        window = candles[:i + 1]
-        a = analyze(window)
-        f = compute_single_timeframe(window, "1m")
-        feats = dict(f["features"]); feats["volatility"] = f["volatility"]; feats["rel_volume"] = f["features"].get("rel_volume")
-        evs = evaluate_all(a.model_dump(), feats, window[-1].close)
-        closes = [c.close for c in window]
-        sig = decide(evs, feats, {"session": a.session, "closes": closes[-10:], "analysis": a.model_dump()},
-                     min_conf=min_conf)
+    bars = prep if prep is not None else prepare_bars(candles, warmup, window)
+    for b in bars:
+        i, entry, atr, feats, evs, ctx = (b["i"], b["entry"], b["atr"], b["feats"], b["evs"], b["ctx"])
+        if i + horizon >= len(candles):
+            continue
+        # Trailing window: structure/indicators are local phenomena; bounding the
+        # window keeps the loop O(n) instead of O(n^2). Live path still uses full history.
+        sig = decide(evs, feats, ctx, min_conf=min_conf)
         if sig["action"] == "NO_TRADE" or sig.get("state") not in ("CONFIRMED",):
             continue
-        p = plan(sig, window[-1].close, feats.get("atr14"), equity=cur, risk_pct=risk_pct,
+        p = plan(sig, entry, atr, equity=cur, risk_pct=risk_pct,
                    sl_mult=sl_mult, tp_mult=tp_mult)
         if not p.get("feasible"):
             continue

@@ -35,7 +35,7 @@ def eval_trend_cont(analysis: dict, feats: dict) -> dict:
             missing.append(f"RSI {rsi} not in 30-50")
     else:
         missing.append("no direction (trend RANGE)")
-    vol = feats.get("_volatility") or ""
+    vol = feats.get("_volatility") or feats.get("volatility") or ""
     if vol in ("NORMAL_VOLATILITY", "HIGH_VOLATILITY"):
         met.append(f"volatility={vol}")
     else:
@@ -84,7 +84,7 @@ def eval_range_fade(analysis: dict, feats: dict, entry_price: float | None = Non
         met.append(f"exhaustion RSI={rsi}")
     else:
         missing.append(f"no exhaustion RSI={rsi}")
-    vol = feats.get("_volatility") or ""
+    vol = feats.get("_volatility") or feats.get("volatility") or ""
     if vol in ("LOW_VOLATILITY", "NORMAL_VOLATILITY"):
         met.append(f"volatility={vol}")
     else:
@@ -149,7 +149,7 @@ def eval_pullback_cont(analysis: dict, feats: dict, closes: list[float] | None =
         met.append(f"RSI {rsi:.1f} recovering toward neutral")
     else:
         missing.append(f"RSI {rsi} not in 40-60 recovery band")
-    vol = feats.get("_volatility") or ""
+    vol = feats.get("_volatility") or feats.get("volatility") or ""
     if vol in ("NORMAL_VOLATILITY", "HIGH_VOLATILITY"):
         met.append(f"volatility={vol}")
     else:

@@ -19,8 +19,9 @@ def test_walk_forward_shape():
     assert "avg_wf_efficiency" in j and "verdict" in j and isinstance(j["folds"], list)
 
 def test_monte_carlo_math():
-    m = monte_carlo([10.0, -5.0, 8.0, -3.0, 12.0, -4.0] * 10, sims=200, seed=1)
-    assert m["sims"] == 200 and 0 <= m["p_negative"] <= 1
+    m = monte_carlo([10.0, -5.0, 8.0, -3.0, 12.0, -4.0] * 10, sims=200, seed=1, equity=10000.0)
+    assert m["sims"] == 200 and 0 <= m["p_bad_path"] <= 1
+    assert m["p95_max_dd_pct"] >= m["median_max_dd_pct"] >= 0
     assert m["verdict"] in ("ROBUST", "FRAGILE")
     e = monte_carlo([])
     assert e["verdict"] == "NO_TRADES"
