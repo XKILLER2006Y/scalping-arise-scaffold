@@ -63,9 +63,11 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
     solid = [r for r in fold_rows if not r["thin"]]
     passing = [r for r in solid if r["wf_efficiency"] >= 0.4]
     avg_eff = round(sum(r["wf_efficiency"] for r in solid) / len(solid), 2) if solid else 0.0
+    avg_oos_pf = round(sum(r["oos_pf"] for r in solid) / len(solid), 2) if solid else 0.0
     # Consistency gate: average hides bimodal folds (one great, two dead).
-    # Need >=2 solid folds AND >=2 passing AND avg>=0.5.
-    if len(solid) >= 2 and len(passing) >= 2 and avg_eff >= 0.5:
+    # Need >=2 solid folds AND >=2 passing AND avg>=0.5 AND absolute OOS quality
+    # (efficiency relative to a terrible in-sample is meaningless).
+    if len(solid) >= 2 and len(passing) >= 2 and avg_eff >= 0.5 and avg_oos_pf >= 1.2:
         verdict = "ROBUST"
     elif not fold_rows:
         verdict = "NO_DATA"
@@ -73,7 +75,8 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
         verdict = "INSUFFICIENT_DATA"
     else:
         verdict = "WEAK"
-    return {"folds": fold_rows, "avg_wf_efficiency": avg_eff, "verdict": verdict,
+    return {"folds": fold_rows, "avg_wf_efficiency": avg_eff, "avg_oos_pf": avg_oos_pf,
+            "verdict": verdict,
             "note": "ROBUST needs >=2 solid (>=5-trade OOS) folds, >=2 with eff>=0.4, avg>=0.5"}
 
 
