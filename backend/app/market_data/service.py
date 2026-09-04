@@ -86,8 +86,12 @@ def get_candles(symbol: str = "XAU/USD", timeframe: str = "1m", limit: int = 100
     t0 = time.time()
     fetch_limit = max(limit, 250)
     # Provider chain (first success wins, source identity preserved):
-    # Twelve Data XAU/USD SPOT -> yfinance GC=F FUTURES_PROXY.
+    # TradingView OANDA:XAUUSD SPOT (primary, no key) -> Twelve Data XAU/USD
+    # SPOT (keyed) -> yfinance GC=F FUTURES_PROXY. TV is unofficial and can
+    # break on any TV deploy; failover below is the safety net.
     chain = []
+    from app.market_data.providers.tradingview_provider import TradingViewProvider
+    chain.append(("tradingview", "SPOT", False, TradingViewProvider()))
     chain.append(("twelve_data", "SPOT", False,
                   TwelveDataProvider(settings.twelve_data_api_key, settings.twelve_data_base_url)))
     chain.append(("yfinance", "FUTURES_PROXY", True, YFinanceProvider()))
@@ -98,7 +102,7 @@ def get_candles(symbol: str = "XAU/USD", timeframe: str = "1m", limit: int = 100
             candles = provider.fetch_candles(symbol, timeframe, fetch_limit)
             ms = round((time.time() - t1) * 1000, 1)
             _provider_health[name] = {"ok": True, "fails": 0, "latency_ms": ms,
-                                      "mode": "live" if name == "oanda" or
+                                      "mode": "live" if name == "tradingview" or
                                       (name == "twelve_data" and settings.twelve_data_api_key)
                                       else ("demo-synthetic" if name == "twelve_data" else "fallback")}
             meta = {"cached": False, "source": name, "source_type": stype,

@@ -25,3 +25,8 @@ One call does everything: `GET /api/v1/signal?symbol=XAU/USD&limit=250`
 - Killzones LONDON/NEW_YORK confirm; ASIA/OFF review-only.
 - Closed candles only, all timeframes. No look-ahead.
 - Signals only. Not financial advice.
+
+## Market data providers (primary first)
+- TradingView OANDA:XAUUSD SPOT (primary, no key — unofficial feed, auto-failover below)
+- Twelve Data XAU/USD SPOT (keyed via TWELVE_DATA_API_KEY)
+- yfinance GC=F FUTURES_PROXY (last resort, honestly labeled)

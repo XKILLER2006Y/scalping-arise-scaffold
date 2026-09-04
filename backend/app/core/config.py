@@ -1,8 +1,12 @@
 """Centralized configuration. Single source of truth for thresholds."""
-from pydantic_settings import BaseSettings
+from pathlib import Path
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_DIR = Path(__file__).resolve().parents[2]  # backend/
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=_BACKEND_DIR / ".env", extra="ignore")
     app_name: str = "Scalping Arise"
     api_v1_prefix: str = "/api/v1"
     cors_origins: list[str] = ["http://localhost:3000"]
@@ -34,8 +38,6 @@ class Settings(BaseSettings):
     atr_period: int = 14
     bb_period: int = 20
     bb_std: float = 2.0
-
-    model_config = {"env_prefix": "", "extra": "ignore"}
 
 
 settings = Settings()
