@@ -66,3 +66,9 @@
 - GET /api/v1/strategy/evaluate-quick?symbol&timeframe&limit (server-side fetch)
 - GET /api/v1/system/trace-quick?symbol&limit&equity&risk_pct&spread
 - Market-data cache is LRU (32 entries) + TTL, thread-safe
+
+## Wave 1 validation
+- POST /api/v1/validation/walk-forward {candles, folds, grid?} → IS-select → OOS test per fold + wf_efficiency
+- POST /api/v1/validation/monte-carlo {candles} → trade shuffle 1000x: P(negative), p5 net, p95 DD
+- POST /api/v1/validation/sensitivity {candles, grid?} → sl×tp×conf grid + CLIFF_RISK/STABLE verdict
+- POST /api/v1/validation/full-audit {candles, folds, grid?} → base + WF + MC + sensitivity + 30%-of-B&H benchmark → PROMOTE/WAIT/REJECT

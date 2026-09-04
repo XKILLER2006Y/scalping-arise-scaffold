@@ -36,7 +36,7 @@ def _confidence(quality: int, volatility: str | None, rel_vol: float | None, swe
 
 def resolve(evaluations: list[dict], volatility: str | None, rel_vol: float | None,
             session: str | None = None, closes: list[float] | None = None,
-            analysis: dict | None = None) -> dict:
+            analysis: dict | None = None, min_conf: int = 60) -> dict:
     quals = [e for e in evaluations if e.get("qualified") and e.get("direction")]
     if not quals:
         return {"action": "NO_TRADE", "strategy": None, "direction": None, "confidence": 0,
@@ -71,15 +71,16 @@ def resolve(evaluations: list[dict], volatility: str | None, rel_vol: float | No
                 "confidence": c, "quality": q, "state": "ARMED",
                 "reasons": reasons + ["waiting pullback: need 1-3 counter-trend closes in last 5"],
                 "trace": {"evaluations": evaluations, "volatility": volatility}}
-    state = "CONFIRMED" if (c >= 60 and q >= 60) else "PROPOSED"
+    state = "CONFIRMED" if (c >= min_conf and q >= min_conf) else "PROPOSED"
     return {"action": action, "strategy": e["strategy"], "direction": e["direction"],
             "confidence": c, "quality": q, "state": state,
             "reasons": reasons, "trace": {"evaluations": evaluations, "volatility": volatility}}
 
-def decide(evaluations: list[dict], features: dict, context: dict | None = None) -> dict:
+def decide(evaluations: list[dict], features: dict, context: dict | None = None,
+         min_conf: int = 60) -> dict:
     ctx = context or {}
     vol = features.get("volatility") or features.get("_volatility")
     out = resolve(evaluations, vol, features.get("rel_volume"), ctx.get("session"),
-                  ctx.get("closes"), ctx.get("analysis"))
+                  ctx.get("closes"), ctx.get("analysis"), min_conf)
     out["timestamp"] = int(time.time())
     return out

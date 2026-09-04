@@ -2,7 +2,8 @@ import math
 
 def create_plan(signal: dict, entry: float, atr: float | None, equity: float = 10000.0,
          risk_pct: float = 1.0, spread: float = 0.3, contract_oz: float = 100.0,
-         extra_cost: float = 0.2, ml_confidence: float = 50.0) -> dict:
+         extra_cost: float = 0.2, ml_confidence: float = 50.0,
+         sl_mult: float = 1.5, tp_mult: float = 2.0) -> dict:
     if (
         signal.get("action") == "NO_TRADE"
         or atr is None
@@ -31,8 +32,8 @@ def create_plan(signal: dict, entry: float, atr: float | None, equity: float = 1
             "position_size": 0.0,
         }
     direction = signal.get("direction")
-    sl_dist = 1.5 * atr
-    tp_dist = 2.0 * sl_dist
+    sl_dist = sl_mult * atr
+    tp_dist = tp_mult * sl_dist
     sl = entry - sl_dist if direction == "LONG" else entry + sl_dist
     tp = entry + tp_dist if direction == "LONG" else entry - tp_dist
     rr = tp_dist / sl_dist if sl_dist else 0

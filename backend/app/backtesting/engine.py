@@ -7,7 +7,9 @@ from app.signals.engine import decide
 from app.trade_planning.engine import plan
 
 def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float = 1.0,
-                 warmup: int = 200, horizon: int = 10, cost_per_trade: float = 0.3) -> dict:
+                 warmup: int = 200, horizon: int = 10, cost_per_trade: float = 0.3,
+                 sl_mult: float = 1.5, tp_mult: float = 2.0, min_conf: int = 60,
+                 return_all_trades: bool = False) -> dict:
     trades: list[dict] = []
     equity_curve = [equity]
     cur = equity
@@ -19,10 +21,12 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
         feats = dict(f["features"]); feats["volatility"] = f["volatility"]; feats["rel_volume"] = f["features"].get("rel_volume")
         evs = evaluate_all(a.model_dump(), feats, window[-1].close)
         closes = [c.close for c in window]
-        sig = decide(evs, feats, {"session": a.session, "closes": closes[-10:], "analysis": a.model_dump()})
+        sig = decide(evs, feats, {"session": a.session, "closes": closes[-10:], "analysis": a.model_dump()},
+                     min_conf=min_conf)
         if sig["action"] == "NO_TRADE" or sig.get("state") not in ("CONFIRMED",):
             continue
-        p = plan(sig, window[-1].close, feats.get("atr14"), equity=cur, risk_pct=risk_pct)
+        p = plan(sig, window[-1].close, feats.get("atr14"), equity=cur, risk_pct=risk_pct,
+                   sl_mult=sl_mult, tp_mult=tp_mult)
         if not p.get("feasible"):
             continue
         # simulate next `horizon` candles: SL/TP touch?
@@ -63,11 +67,14 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
     exp = (sum(t["pnl"] for t in trades) / len(trades)) if trades else 0.0
     net = cur - equity
     gate, reasons = promotion_gate(len(trades), pf if pf != float("inf") else 99.0, max_dd)
-    return {"trades": len(trades), "wins": len(wins), "win_rate": round(wr, 3),
+    out = {"trades": len(trades), "wins": len(wins), "win_rate": round(wr, 3),
             "profit_factor": round(pf, 2) if pf != float("inf") else None,
             "expectancy": round(exp, 2), "net_pnl": round(net, 2),
             "max_drawdown_pct": round(max_dd, 2), "final_equity": round(cur, 2),
             "gate": gate, "gate_reasons": reasons, "sample": trades[:20]}
+    if return_all_trades:
+        out["trades_full"] = [{"pnl": t["pnl"]} for t in trades]
+    return out
 
 def promotion_gate(n: int, pf: float, max_dd: float) -> tuple[str, list[str]]:
     reasons = []
