@@ -206,3 +206,22 @@ def volume_profile(closes: list[float], volumes: list[float | None], bins: int =
     poc = max(profile.items(), key=lambda x: x[1])[0] if profile else None
     return {"poc": poc, "profile": profile}
 
+
+
+def atr_pct_series(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> list[float | None]:
+    """Per-bar ATR/close ratio, causal (value[i] uses data up to i only)."""
+    a = atr(highs, lows, closes, period)
+    return [(x / c) if (x is not None and c) else None for x, c in zip(a, closes)]
+
+
+def percentile_bands(values: list[float], lo: float = 40.0, mid: float = 75.0, hi: float = 95.0) -> tuple[float, float, float]:
+    """Adaptive regime bands from a trailing sample. No look-ahead by construction
+    (caller passes only its own window)."""
+    xs = sorted(values)
+    if not xs:
+        return (0.0008, 0.0020, 0.0040)
+    def pct(q: float) -> float:
+        k = (len(xs) - 1) * q / 100.0
+        f, c = int(k), min(int(k) + 1, len(xs) - 1)
+        return xs[f] + (xs[c] - xs[f]) * (k - f)
+    return (pct(lo), pct(mid), pct(hi))

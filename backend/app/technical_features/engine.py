@@ -2,20 +2,22 @@
 import time
 from app.core.config import settings
 from app.market_data.models import Candle
-from app.technical_features.indicators import ema, rsi, macd, atr, bollinger, sma, zscore, adx, vwap, cvd, volume_profile, garman_klass
+from app.technical_features.indicators import ema, rsi, macd, atr, bollinger, sma, zscore, adx, vwap, atr_pct_series, percentile_bands, cvd, volume_profile, garman_klass
 
 SUPPORTED_TFS = ["1m", "5m", "15m"]
 FULL_READY_REQUIRED = 200  # EMA200 warm-up
 
-def classify_volatility(atr_val: float | None, close: float | None) -> tuple[str | None, float | None]:
+def classify_volatility(atr_val: float | None, close: float | None,
+                        bands: tuple[float, float, float] | None = None) -> tuple[str | None, float | None]:
     if atr_val is None or close is None or close == 0:
         return None, None
     pct = atr_val / close
-    if pct < settings.vol_low_max:
+    lo, mi, hi = bands if bands else (settings.vol_low_max, settings.vol_normal_max, settings.vol_high_max)
+    if pct < lo:
         return "LOW_VOLATILITY", pct
-    if pct < settings.vol_normal_max:
+    if pct < mi:
         return "NORMAL_VOLATILITY", pct
-    if pct < settings.vol_high_max:
+    if pct < hi:
         return "HIGH_VOLATILITY", pct
     return "EXTREME_VOLATILITY", pct
 
@@ -84,7 +86,12 @@ def compute_single_timeframe(candles: list[Candle], timeframe: str, symbol: str 
     window = closes[-20:]
     rng = max(window) - min(window) if window else 0.0
     pos = (closes[-1] - min(window)) / rng if rng else 0.5
-    vol_class, atr_pct = classify_volatility(a[last], closes[last])
+    # Adaptive bands from this window's own ATR% history (percentile regimes travel
+    # across volatility regimes; fixed absolute bands do not). Falls back to config
+    # bands when history is thin.
+    hist_pcts = [x for x in atr_pct_series(highs, lows, closes, 14) if x is not None]
+    bands = percentile_bands(hist_pcts[-200:]) if len(hist_pcts) >= 60 else None
+    vol_class, atr_pct = classify_volatility(a[last], closes[last], bands)
     e200_ready = e200[last] is not None
     status, reason = get_status(n, e200_ready)
     if vol_class is None and status == "READY":

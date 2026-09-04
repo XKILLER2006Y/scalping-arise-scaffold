@@ -1,6 +1,7 @@
 """Phase 9: event-driven backtest on candle list. Simplified SL/TP touch simulation."""
 from app.market_data.models import Candle
 from app.market_analysis.engine import analyze
+from app.market_data.resample import resample, closed_asof
 from app.technical_features.engine import compute_single_timeframe
 from app.strategy.engine import evaluate_all
 from app.signals.engine import decide
@@ -14,9 +15,18 @@ def prepare_bars(candles: list[Candle], warmup: int = 200, window: int = 400) ->
     instead of 27x full pipelines.
     """
     bars: list[dict] = []
+    htf5 = resample(candles, "5m")
+    htf15 = resample(candles, "15m")
     for i in range(warmup, len(candles)):
         hist = candles[max(0, i + 1 - window):i + 1]
-        a = analyze(hist, now_ts=candles[i].timestamp)
+        ts = candles[i].timestamp
+        a = analyze(hist, now_ts=ts)
+        # HTF context from CLOSED resampled bars only (no look-ahead by construction).
+        c5 = closed_asof(htf5, ts)
+        c15 = closed_asof(htf15, ts)
+        a5 = analyze(c5) if len(c5) >= 20 else None
+        a15 = analyze(c15) if len(c15) >= 20 else None
+        htf = {"bias": (a15 or a5 or a).model_dump(), "structure": (a5 or a).model_dump()}
         f = compute_single_timeframe(hist, "1m")
         feats = dict(f["features"])
         feats["volatility"] = f["volatility"]
@@ -24,7 +34,7 @@ def prepare_bars(candles: list[Candle], warmup: int = 200, window: int = 400) ->
         closes = [c.close for c in hist]
         evs = evaluate_all(a.model_dump(), feats, hist[-1].close, closes=closes,
                            candle_count=len(hist),
-                           source_type=str(hist[0].source_type))
+                           source_type=str(hist[0].source_type), mtf=htf)
         bars.append({"i": i, "entry": hist[-1].close, "atr": feats.get("atr14"),
                      "feats": feats, "evs": evs,
                      "ctx": {"session": a.session, "closes": closes[-10:],
@@ -42,12 +52,13 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
     cur = equity
     peak, max_dd = equity, 0.0
     bars = prep if prep is not None else prepare_bars(candles, warmup, window)
+    cooldown_until = -1  # no stacking: one position per setup, re-arm after `horizon` bars
     for b in bars:
         i, entry, atr, feats, evs, ctx = (b["i"], b["entry"], b["atr"], b["feats"], b["evs"], b["ctx"])
         if i + horizon >= len(candles):
             continue
-        # Trailing window: structure/indicators are local phenomena; bounding the
-        # window keeps the loop O(n) instead of O(n^2). Live path still uses full history.
+        if i < cooldown_until:
+            continue  # post-trade cooldown: let the setup reset
         sig = decide(evs, feats, ctx, min_conf=min_conf)
         if sig["action"] == "NO_TRADE" or sig.get("state") not in ("CONFIRMED",):
             continue
@@ -85,6 +96,7 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
         trades.append({"i": i, "strategy": sig["strategy"], "direction": direction,
                        "entry": entry, "exit": round(exit_px, 2), "r": round(r_mult, 2),
                        "pnl": round(pnl, 2), "result": res})
+        cooldown_until = i + horizon
     wins = [t for t in trades if t["pnl"] > 0]
     losses = [t for t in trades if t["pnl"] <= 0]
     gw = sum(t["pnl"] for t in wins); gl = -sum(t["pnl"] for t in losses)

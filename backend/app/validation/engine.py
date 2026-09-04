@@ -55,13 +55,26 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
         # Collect OOS trade pnls for Monte Carlo.
         oos_trades.extend(oos.get("sample", []))
         eff = (_pf_of(oos) / best_pf) if best_pf > 0 else 0.0
+        thin = oos["trades"] < 5
         fold_rows.append({"fold": f, "is_pf": round(best_pf, 2), "params": best,
                           "oos_trades": oos["trades"], "oos_pf": round(_pf_of(oos), 2),
-                          "oos_net": oos["net_pnl"], "wf_efficiency": round(eff, 2)})
-    avg_eff = round(sum(r["wf_efficiency"] for r in fold_rows) / len(fold_rows), 2) if fold_rows else 0.0
-    verdict = "ROBUST" if avg_eff >= 0.5 and len(fold_rows) >= 2 else ("WEAK" if fold_rows else "NO_DATA")
+                          "oos_net": oos["net_pnl"], "wf_efficiency": round(eff, 2),
+                          "thin": thin})
+    solid = [r for r in fold_rows if not r["thin"]]
+    passing = [r for r in solid if r["wf_efficiency"] >= 0.4]
+    avg_eff = round(sum(r["wf_efficiency"] for r in solid) / len(solid), 2) if solid else 0.0
+    # Consistency gate: average hides bimodal folds (one great, two dead).
+    # Need >=2 solid folds AND >=2 passing AND avg>=0.5.
+    if len(solid) >= 2 and len(passing) >= 2 and avg_eff >= 0.5:
+        verdict = "ROBUST"
+    elif not fold_rows:
+        verdict = "NO_DATA"
+    elif len(solid) < 2:
+        verdict = "INSUFFICIENT_DATA"
+    else:
+        verdict = "WEAK"
     return {"folds": fold_rows, "avg_wf_efficiency": avg_eff, "verdict": verdict,
-            "note": "Efficiency>=0.5 across >=2 folds = edge survives unseen data"}
+            "note": "ROBUST needs >=2 solid (>=5-trade OOS) folds, >=2 with eff>=0.4, avg>=0.5"}
 
 
 def monte_carlo(trade_pnls: list[float], sims: int = 1000, seed: int = 7,
@@ -151,7 +164,14 @@ def full_audit(candles: list[Candle], equity: float = 10000.0, risk_pct: float =
         reasons.append(f"benchmark FAIL: {bench['reason']}")
     if base["gate"] == "REJECT":
         reasons.append(f"base gate REJECT: {base['gate_reasons']}")
-    gate = "PROMOTE" if not reasons else ("WAIT" if base["gate"] != "REJECT" else "REJECT")
+    # Final can never exceed the base gate (e.g. base WAIT on <50 trades caps at WAIT).
+    cap = {"PROMOTE": 2, "WAIT": 1, "REJECT": 0}
+    level = cap.get(base["gate"], 1)
+    if reasons:
+        level = min(level, 1)
+    if base["gate"] == "REJECT" or wf["verdict"] in ("WEAK", "NO_DATA"):
+        level = 0
+    gate = {2: "PROMOTE", 1: "WAIT", 0: "REJECT"}[level]
     return {"base": {k: base[k] for k in ("trades", "win_rate", "profit_factor", "net_pnl",
                                          "max_drawdown_pct", "gate")},
             "walk_forward": wf, "monte_carlo": mc, "sensitivity": sens,

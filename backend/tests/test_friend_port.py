@@ -81,3 +81,15 @@ def test_get_quick_endpoints():
     t = client.get("/api/v1/system/trace-quick", params={"symbol": "XAU/USD", "limit": 250})
     assert t.status_code == 200
     assert "signal" in t.json() and "exposure" in t.json()
+
+def test_resample_closed_buckets_only():
+    from app.market_data.resample import resample, closed_asof
+    from app.market_data.providers.base import synth_candles
+    cs = synth_candles("twelve_data", "XAU/USD", SourceType.SPOT, n=16)
+    r5 = resample(cs, "5m")
+    # trailing forming bucket dropped; all emitted buckets aggregate 5 bars
+    assert len(r5) >= 2
+    assert r5[0].high == max(c.high for c in cs[:5])
+    assert r5[0].close == cs[4].close
+    assert closed_asof(r5, r5[0].timestamp) == r5[:1]
+    assert closed_asof(r5, 0) == []

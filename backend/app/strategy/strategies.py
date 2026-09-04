@@ -6,7 +6,7 @@ STRATEGIES = {
         "rules": [
             "trend is UPTREND or DOWNTREND (no RANGE)",
             "close above EMA20 above EMA50 for long / below for short",
-            "RSI 50-70 long / 30-50 short",
+            "RSI 50-80 long / 20-50 short (trend zone, extremes excluded)",
             "volatility NORMAL or HIGH (never LOW/EXTREME)",
             "ADX>=20 trend strength; ATR-ratio 0.4-2.0 (no dead/spike market)",
             "BOS true",
@@ -20,7 +20,7 @@ STRATEGIES = {
             "underlying trend UPTREND/DOWNTREND on setup timeframe",
             "pullback detected: 1-3 counter-trend closes in last 5",
             "price within 0.5*ATR of EMA20 or S/R zone",
-            "RSI recovering toward neutral (40-60 band)",
+            "RSI recovering toward neutral (35-65 band)",
             "volatility NORMAL/HIGH; ADX>=20; ATR-ratio 0.4-2.0",
             "invalidation: structure break vs trend, regime flip to RANGE, pullback deeper than 61.8%, opposing sweep",
         ],
