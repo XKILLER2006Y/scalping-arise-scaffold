@@ -1,5 +1,5 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-async function j<T>(path: string, init?: RequestInit): Promise<T> {
+async function j<T = any>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
   if (!r.ok) throw new Error(`${path} ${r.status}`);
   return r.json();
@@ -20,4 +20,6 @@ export const api = {
   news: () => j("/api/v1/intelligence/news-check"),
   backtest: (candles: any[]) => j("/api/v1/backtest/run", { method: "POST", body: JSON.stringify({ candles, equity: 10000, risk_pct: 1.0 }) }),
   sysHealth: () => j("/api/v1/system/health"),
+  portfolio: () => j("/api/v1/execution/portfolio"),
+  execute: (plan: any) => j("/api/v1/execution/trade", { method: "POST", body: JSON.stringify(plan) }),
 };

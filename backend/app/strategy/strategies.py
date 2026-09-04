@@ -13,6 +13,18 @@ STRATEGIES = {
             "Phase 6 entry additionally requires: killzone session (LONDON/NEW_YORK) + 1-3 bar pullback (ARMED→ENTRY)",
         ],
     },
+    "PULLBACK_CONT": {
+        "description": "Pullback continuation (ported w/ permission from Hash-sudo-cell/scalping-arise): established trend + temporary counter-trend pullback + recovery near EMA/S-R. Deep pullbacks (>61.8%) excluded.",
+        "timeframes": {"bias": "15m", "structure": "5m", "entry": "1m"},
+        "rules": [
+            "underlying trend UPTREND/DOWNTREND on setup timeframe",
+            "pullback detected: 1-3 counter-trend closes in last 5",
+            "price within 0.5*ATR of EMA20 or S/R zone",
+            "RSI recovering toward neutral (40-60 band)",
+            "volatility NORMAL/HIGH; ADX>=20; ATR-ratio 0.4-2.0",
+            "invalidation: structure break vs trend, regime flip to RANGE, pullback deeper than 61.8%, opposing sweep",
+        ],
+    },
     "RANGE_FADE": {
         "description": "Range fade at support/resistance with statistical extreme + exhaustion.",
         "timeframes": {"bias": "15m", "structure": "5m", "entry": "1m"},

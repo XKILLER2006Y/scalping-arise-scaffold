@@ -57,3 +57,12 @@
 - Z-score>=2 + ADX<=22 fade filter; ADX>=20 + ATR-ratio 0.4-2.0 trend filter
 - Cost gate TP>=4x cost, ATR>=3x cost; multi-TP ladder + breakeven note
 - Daily 10-trade cap, -5% halt, 2-loss cooldown; VWAP context
+
+## Friend-port additions (w/ permission, see ATTRIBUTION.md)
+- Strategy `PULLBACK_CONT` in POST /api/v1/strategy/evaluate (3 evaluations now)
+- Each evaluation carries `eligibility` (gate: analysis/candles/features/source/regime)
+  and `invalidation` (veto rules: CHOCH, regime flip, structure break, >61.8% depth,
+  breakout, opposing sweep, sweep acceptance)
+- GET /api/v1/strategy/evaluate-quick?symbol&timeframe&limit (server-side fetch)
+- GET /api/v1/system/trace-quick?symbol&limit&equity&risk_pct&spread
+- Market-data cache is LRU (32 entries) + TTL, thread-safe

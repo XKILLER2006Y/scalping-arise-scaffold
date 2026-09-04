@@ -28,6 +28,27 @@ def synth_candles(source: str, provider_instrument: str, source_type, n: int = 1
         price = c
     return out
 
+import asyncio
+
+async def synth_websocket_stream(source: str, provider_instrument: str, source_type):
+    """Simulates a live WebSocket stream emitting a new tick/candle every few seconds."""
+    price = 2650.0
+    i = 0
+    while True:
+        await asyncio.sleep(2.0)  # Emit every 2 seconds
+        i += 1
+        drift = ((i * 37) % 11 - 5) * 0.35
+        o = price
+        c = price + drift
+        h = max(o, c) + 0.4
+        l = min(o, c) - 0.4
+        price = c
+        yield Candle(
+            timestamp=int(time.time()), open=o, high=h, low=l, close=c,
+            volume=1000 + (i * 13) % 500,
+            provider_instrument=provider_instrument, source=source, source_type=source_type
+        )
+
 _TD_INTERVAL = {"1m": "1min", "5m": "5min", "15m": "15min"}
 
 class TwelveDataProvider(BaseProvider):

@@ -1,4 +1,4 @@
-# Scalping Arise — Scaffold (ours, compare later with friend's repo)
+# Scalping Arise — our XAU/USD trading analysis platform
 
 Modular XAU/USD trading analysis platform. Scaffold-only full pipeline.
 
@@ -17,7 +17,7 @@ Phase 10 System: Complete (trace + health + metrics + reliability + forward log)
 Enterprise: MIT, SECURITY, request-ID logs, API key guard, rate limit, SQLite persistence, Docker/CI
 ```
 
-> Friend's real repo stays joint-locked. This is our independent reference for later comparison.
+> Solo build. Our architecture, our rules, our best.
 
 ## Architecture
 ```

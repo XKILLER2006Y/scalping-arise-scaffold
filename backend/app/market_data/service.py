@@ -1,10 +1,39 @@
 """Normalization, validation, caching, failover, freshness, gaps. No look-ahead."""
+import threading
 import time
+from collections import OrderedDict
 from app.core.config import settings
 from app.market_data.models import Candle
 from app.market_data.providers.base import TwelveDataProvider, YFinanceProvider
 
-_cache: dict[str, tuple[float, list[Candle]]] = {}
+# LRU + TTL cache (eviction pattern adapted w/ permission from
+# Hash-sudo-cell/scalping-arise backend/app/modules/market_data/cache.py).
+_CACHE_MAX_ENTRIES = 32
+_cache: OrderedDict[str, tuple[float, list[Candle]]] = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _cache_get(k: str):
+    with _cache_lock:
+        if k in _cache:
+            _cache.move_to_end(k)
+            return _cache[k]
+    return None
+
+
+def _cache_put(k: str, val: tuple[float, list[Candle]]):
+    with _cache_lock:
+        if k in _cache:
+            _cache.pop(k)
+        _cache[k] = val
+        while len(_cache) > _CACHE_MAX_ENTRIES:
+            _cache.popitem(last=False)
+
+
+def cache_stats() -> dict:
+    with _cache_lock:
+        return {"entries": len(_cache), "max_entries": _CACHE_MAX_ENTRIES,
+                "keys": list(_cache.keys())}
 _provider_health: dict[str, dict] = {
     "twelve_data": {"ok": True, "fails": 0, "latency_ms": None, "mode": "demo-or-live"},
     "yfinance": {"ok": True, "fails": 0, "latency_ms": None, "mode": "live-or-demo"},
@@ -36,14 +65,29 @@ def provider_health() -> dict:
 def get_candles(symbol: str = "XAU/USD", timeframe: str = "1m", limit: int = 100) -> tuple[list[Candle], dict]:
     k = _key(symbol, timeframe)
     now = time.time()
-    if k in _cache and now - _cache[k][0] < settings.cache_ttl_seconds:
-        candles = _cache[k][1][:limit]
-        return candles, {"cached": True, "source": candles[0].source if candles else None,
-                         "source_type": candles[0].source_type if candles else None}
+    hit = _cache_get(k)
+    if hit and now - hit[0] < settings.cache_ttl_seconds:
+        cached_list = hit[1]
+        if len(cached_list) >= limit:
+            out = cached_list[-limit:]
+            age = now - out[-1].timestamp if out else 0
+            meta = {
+                "cached": True,
+                "source": out[0].source if out else None,
+                "source_type": out[0].source_type if out else None,
+                "fresh": age <= settings.freshness_max_age_seconds,
+                "age_seconds": round(age, 1),
+            }
+            issues = validate_candles(out, timeframe)
+            if issues:
+                meta["validation_issues"] = issues[:10]
+            return out, meta
+
     t0 = time.time()
+    fetch_limit = max(limit, 250)
     primary = TwelveDataProvider(settings.twelve_data_api_key, settings.twelve_data_base_url)
     try:
-        candles = primary.fetch_candles(symbol, timeframe, limit)
+        candles = primary.fetch_candles(symbol, timeframe, fetch_limit)
         ms = round((time.time() - t0) * 1000, 1)
         _provider_health["twelve_data"] = {"ok": True, "fails": 0, "latency_ms": ms,
                                            "mode": "live" if settings.twelve_data_api_key else "demo-synthetic"}
@@ -54,16 +98,17 @@ def get_candles(symbol: str = "XAU/USD", timeframe: str = "1m", limit: int = 100
                                            "latency_ms": ms, "error": str(e)[:200]}
         t1 = time.time()
         fallback = YFinanceProvider()
-        candles = fallback.fetch_candles(symbol, timeframe, limit)
+        candles = fallback.fetch_candles(symbol, timeframe, fetch_limit)
         ms2 = round((time.time() - t1) * 1000, 1)
         _provider_health["yfinance"] = {"ok": True, "fails": 0, "latency_ms": ms2, "mode": "fallback"}
         meta = {"cached": False, "source": "yfinance", "source_type": "FUTURES_PROXY", "failover": True}
-    _cache[k] = (now, candles)
-    if candles:
-        age = now - candles[-1].timestamp
+    _cache_put(k, (now, candles))
+    out = candles[-limit:]
+    if out:
+        age = now - out[-1].timestamp
         meta["fresh"] = age <= settings.freshness_max_age_seconds
         meta["age_seconds"] = round(age, 1)
-    issues = validate_candles(candles, timeframe)
+    issues = validate_candles(out, timeframe)
     if issues:
         meta["validation_issues"] = issues[:10]
-    return candles[:limit], meta
+    return out, meta

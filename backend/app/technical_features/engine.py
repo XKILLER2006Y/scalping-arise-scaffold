@@ -2,7 +2,7 @@
 import time
 from app.core.config import settings
 from app.market_data.models import Candle
-from app.technical_features.indicators import ema, rsi, macd, atr, bollinger, sma, zscore, adx, vwap
+from app.technical_features.indicators import ema, rsi, macd, atr, bollinger, sma, zscore, adx, vwap, cvd, volume_profile, garman_klass
 
 SUPPORTED_TFS = ["1m", "5m", "15m"]
 FULL_READY_REQUIRED = 200  # EMA200 warm-up
@@ -28,27 +28,52 @@ def get_status(n: int, ema200_ready: bool) -> tuple[str, str | None]:
     return "READY", None
 
 def compute_single_timeframe(candles: list[Candle], timeframe: str, symbol: str = "XAU/USD") -> dict:
-    closes = [c.close for c in candles]
+    opens = [c.open for c in candles]
     highs = [c.high for c in candles]
     lows = [c.low for c in candles]
+    closes = [c.close for c in candles]
     vols = [c.volume for c in candles if c.volume is not None]
     n = len(closes)
+    
     if n == 0:
         st = "SPOT"
         status, reason = get_status(0, False)
         return {"symbol": symbol, "timeframe": timeframe, "features": {}, "volatility": None,
                 "atr_pct": None, "status": status, "reason": reason, "source_type": st,
                 "provider_instrument": "XAU/USD", "candle_count": 0, "timestamp": int(time.time())}
-    e20, e50, e200 = ema(closes, 20), ema(closes, 50), ema(closes, 200)
+
+    cvd_line = cvd(opens, highs, lows, closes, vols)
+    gk_vol_line = garman_klass(opens, highs, lows, closes, 14)
     r = rsi(closes, 14)
+    
+    returns = [0.0]
+    for i in range(1, len(closes)):
+        returns.append((closes[i] - closes[i-1]) / closes[i-1] if closes[i-1] else 0)
+    
+    import math
+    log_returns = [0.0]
+    for i in range(1, len(closes)):
+        log_returns.append(math.log(closes[i]/closes[i-1]) if closes[i-1] > 0 and closes[i] > 0 else 0.0)
+        
+    vol_14 = 0.0
+    if len(log_returns) >= 14:
+        w = log_returns[-14:]
+        m = sum(w) / 14
+        var = sum((x - m)**2 for x in w) / 14
+        vol_14 = math.sqrt(var)
+    
+    sma9_vals = sma(closes, 9)
+    sma21_vals = sma(closes, 21)
+    
+    e20, e50, e200 = ema(closes, 20), ema(closes, 50), ema(closes, 200)
     ml, sl, hl = macd(closes)
     a = atr(highs, lows, closes, 14)
     bm, bu, bl = bollinger(closes, 20, 2.0)
     z = zscore(closes, 20)
     ax = adx(highs, lows, closes, 14)
-    va = [c.volume for c in candles]
-    vw = vwap(highs, lows, closes, va)
-    # ATR ratio vs its own SMA20 (regime-normalized volatility, cf. Gold Snap Scalper)
+    vw = vwap(highs, lows, closes, vols)
+    vp = volume_profile(closes[-20:], vols[-20:])
+    
     avals = [x for x in a if x is not None]
     asma = sma(avals, 20)
     atr_ratio = (avals[-1] / asma[-1]) if avals and asma and asma[-1] else None
@@ -65,14 +90,27 @@ def compute_single_timeframe(candles: list[Candle], timeframe: str, symbol: str 
     if vol_class is None and status == "READY":
         status, reason = "WARMING_UP", "ATR not ready for volatility classification"
     st = candles[0].source_type
+    
     return {
         "symbol": symbol, "timeframe": timeframe,
         "features": {
+            "cvd": cvd_line[last] if cvd_line else 0,
+            "gk_vol": gk_vol_line[last] if gk_vol_line else 0,
+            "rsi14": r[last] if r else 0,
+            "return": returns[-1],
+            "log_return": log_returns[-1],
+            "volatility_14": vol_14,
+            "volume": vols[-1] if vols else 0,
+            "sma_9": sma9_vals[last] if sma9_vals and sma9_vals[last] else closes[last],
+            "sma_21": sma21_vals[last] if sma21_vals and sma21_vals[last] else closes[last],
+            "dist_sma9": (closes[last] - sma9_vals[last]) / sma9_vals[last] if sma9_vals and sma9_vals[last] else 0,
+            "dist_sma21": (closes[last] - sma21_vals[last]) / sma21_vals[last] if sma21_vals and sma21_vals[last] else 0,
             "ema20": e20[last], "ema50": e50[last], "ema200": e200[last],
-            "rsi14": r[last], "macd_line": ml[last], "macd_signal": sl[last], "macd_hist": hl[last],
+            "macd_line": ml[last], "macd_signal": sl[last], "macd_hist": hl[last],
             "atr14": a[last], "atr_ratio": atr_ratio, "z20": z[last], "adx14": ax[last], "vwap": vw[last],
             "bb_mid": bm[last], "bb_up": bu[last], "bb_lo": bl[last],
             "vol_sma20": vsma, "rel_volume": rel_vol,
+            "vp_poc": vp["poc"],
             "price_change": price_change, "price_range": rng, "position_in_range": pos,
         },
         "volatility": vol_class, "atr_pct": atr_pct,

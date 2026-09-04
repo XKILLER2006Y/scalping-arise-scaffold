@@ -31,3 +31,13 @@ def rel():
 @router.get("/forward")
 def fwd(limit: int = 50):
     return {"entries": _forward_log[-limit:][::-1], "total": len(_forward_log)}
+
+@router.get("/trace-quick")
+def trace_quick(symbol: str = "XAU/USD", limit: int = 250, equity: float = 10000.0,
+                risk_pct: float = 1.0, spread: float = 0.3):
+    """Full pipeline with server-side data fetch (no candle upload needed)."""
+    from app.market_data.service import get_candles
+    c1, _ = get_candles(symbol, "1m", limit)
+    c5, _ = get_candles(symbol, "5m", limit)
+    c15, _ = get_candles(symbol, "15m", limit)
+    return full_trace(c1, c5, c15, symbol, equity, risk_pct, spread)

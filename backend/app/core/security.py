@@ -1,10 +1,12 @@
 """Enterprise guards, stdlib-only: optional API key + in-memory rate limit."""
 import time
+import threading
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 
 _hits: dict[str, list[float]] = {}
+_hits_lock = threading.Lock()
 RATE_PER_MIN = 120
 
 def _client_ip(req: Request) -> str:
@@ -24,9 +26,10 @@ async def guard(request: Request, call_next):
     if request.url.path not in ("/api/v1/health", "/api/v1/system/health", "/api/v1/system/metrics"):
         now = time.time()
         ip = _client_ip(request)
-        wins = [t for t in _hits.get(ip, []) if now - t < 60]
-        if len(wins) >= RATE_PER_MIN:
-            return JSONResponse(status_code=429, content={"error": "rate_limited", "retry_after_s": 60})
-        wins.append(now)
-        _hits[ip] = wins[-RATE_PER_MIN:]
+        with _hits_lock:
+            wins = [t for t in _hits.get(ip, []) if now - t < 60]
+            if len(wins) >= RATE_PER_MIN:
+                return JSONResponse(status_code=429, content={"error": "rate_limited", "retry_after_s": 60})
+            wins.append(now)
+            _hits[ip] = wins[-RATE_PER_MIN:]
     return await call_next(request)

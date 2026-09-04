@@ -17,7 +17,7 @@ def test_phase5_evaluate_shape():
     r = client.post("/api/v1/strategy/evaluate", json={"analysis": a, "features": feats, "close": 2650.0})
     assert r.status_code == 200
     evs = r.json()["evaluations"]
-    assert {e["strategy"] for e in evs} == {"TREND_CONT", "RANGE_FADE"}
+    assert {e["strategy"] for e in evs} == {"TREND_CONT", "PULLBACK_CONT", "RANGE_FADE"}
     assert all("qualified" in e and "quality" in e for e in evs)
 
 def test_phase6_decide_no_trade_or_signal():

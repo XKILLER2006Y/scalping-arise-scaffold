@@ -20,3 +20,19 @@ node_modules/
 out/
 dist/
 build/
+
+# Agent work directories
+.agents/
+
+# Build artifacts
+frontend/tsconfig.tsbuildinfo
+
+# Data & models (large binaries — don't commit)
+data/
+models/
+*.pkl
+
+# SQLite
+*.db
+*.db-journal
+*.db-wal

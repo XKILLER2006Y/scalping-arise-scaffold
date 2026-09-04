@@ -134,3 +134,75 @@ def vwap(highs: list[float], lows: list[float], closes: list[float], volumes: li
         pv += tp * v; vv += v
         out[i] = (pv / vv) if vv else None
     return out
+
+def cvd(opens: list[float], highs: list[float], lows: list[float], closes: list[float], volumes: list[float | None]) -> list[float | None]:
+    """Cumulative Volume Delta: Pseudo Order Flow Imbalance (OFI) proxy based on intra-candle price action."""
+    out: list[float | None] = [None] * len(closes)
+    cum_delta = 0.0
+    for i in range(len(closes)):
+        v = volumes[i] if i < len(volumes) and volumes[i] else 0.0
+        h, l, c = highs[i], lows[i], closes[i]
+        rng = h - l
+        if rng > 0:
+            buy_pressure = (c - l) / rng
+            ofi_proxy = (buy_pressure - 0.5) * v
+        else:
+            ofi_proxy = 0.0
+        cum_delta += ofi_proxy
+        out[i] = cum_delta
+    return out
+
+def garman_klass(opens: list[float], highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> list[float | None]:
+    """Garman-Klass Volatility: incorporates O/H/L/C for better variance estimation."""
+    out: list[float | None] = [None] * len(closes)
+    gk_vals = []
+    for i in range(len(closes)):
+        o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+        if (
+            o is not None and h is not None and l is not None and c is not None
+            and o > 0 and h > 0 and l > 0 and c > 0
+            and not any(math.isnan(x) or math.isinf(x) for x in (o, h, l, c))
+        ):
+            try:
+                gk = 0.5 * math.log(h / l)**2 - (2 * math.log(2) - 1) * math.log(c / o)**2
+                # Avoid negative roots due to floating point drift
+                gk_vals.append(max(0.0, gk))
+            except (ValueError, ZeroDivisionError):
+                gk_vals.append(0.0)
+        else:
+            gk_vals.append(0.0)
+
+    for i in range(period - 1, len(closes)):
+        w = gk_vals[i - period + 1:i + 1]
+        out[i] = math.sqrt(sum(w) / period)
+    return out
+
+def volume_profile(closes: list[float], volumes: list[float | None], bins: int = 10) -> dict:
+    """Calculate Volume Profile and Point of Control (POC) for the given window."""
+    clean = []
+    for i, c in enumerate(closes):
+        if c is not None and not math.isnan(c) and not math.isinf(c) and c > 0:
+            v = volumes[i] if i < len(volumes) and volumes[i] is not None and not math.isnan(volumes[i]) and not math.isinf(volumes[i]) and volumes[i] > 0 else 0.0
+            clean.append((c, v))
+
+    if not clean:
+        return {"poc": None, "profile": {}}
+
+    clean_closes = [x[0] for x in clean]
+    min_px, max_px = min(clean_closes), max(clean_closes)
+    if min_px == max_px or bins <= 0:
+        return {"poc": min_px, "profile": {min_px: sum(x[1] for x in clean)}}
+
+    bin_size = (max_px - min_px) / bins
+    if bin_size <= 0:
+        return {"poc": min_px, "profile": {min_px: sum(x[1] for x in clean)}}
+
+    profile = {}
+    for c, v in clean:
+        idx = math.floor((c - min_px) / bin_size)
+        b = round(min_px + idx * bin_size, 2)
+        profile[b] = profile.get(b, 0.0) + v
+
+    poc = max(profile.items(), key=lambda x: x[1])[0] if profile else None
+    return {"poc": poc, "profile": profile}
+

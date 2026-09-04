@@ -18,6 +18,20 @@ class AnalysisResult(BaseModel):
     source_type: SourceType
     candle_count: int
 
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
+    def __getitem__(self, key: str):
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(key)
+
+    def __contains__(self, key: str):
+        return hasattr(self, key)
+
+    def keys(self):
+        return self.__dict__.keys()
+
 def detect_swings(candles: list[Candle], left: int = 2, right: int = 2):
     highs, lows = [], []
     hs = [c.high for c in candles]
@@ -78,7 +92,8 @@ def analyze(candles: list[Candle], symbol: str = "XAU/USD") -> AnalysisResult:
     choch = len(highs) >= 2 and len(lows) >= 2 and trend == "RANGE" and bos
     closes = [c.close for c in candles[-50:]]
     rng = max(closes) - min(closes) if closes else 0
-    avg = sum(closes) / len(closes) if closes else 1
+    avg = sum(closes) / len(closes) if closes else 1.0
+    if avg <= 0: avg = 1.0
     regime = "VOLATILE" if rng / avg > 0.004 else ("TRENDING" if trend != "RANGE" else "RANGING")
     sup = sorted(set(round(c.low, 2) for c in candles[-30:]))[:3] if candles else []
     res = sorted(set(round(c.high, 2) for c in candles[-30:]))[-3:] if candles else []
@@ -92,3 +107,7 @@ def analyze(candles: list[Candle], symbol: str = "XAU/USD") -> AnalysisResult:
                           sweeps=detect_sweeps(candles, highs, lows) if candles else [],
                           fvgs=detect_fvg(candles) if candles else [],
                           source_type=st, candle_count=len(candles))
+
+
+analyze_market = analyze
+
