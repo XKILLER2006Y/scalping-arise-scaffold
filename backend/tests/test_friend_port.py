@@ -85,7 +85,10 @@ def test_get_quick_endpoints():
 def test_resample_closed_buckets_only():
     from app.market_data.resample import resample, closed_asof
     from app.market_data.providers.base import synth_candles
-    cs = synth_candles("twelve_data", "XAU/USD", SourceType.SPOT, n=16)
+    # Aligned start (multiple of 300s): bucket boundaries deterministic,
+    # independent of wall-clock. Unaligned starts made this test flaky.
+    cs = synth_candles("twelve_data", "XAU/USD", SourceType.SPOT, n=16,
+                       start=1_700_000_000 - (1_700_000_000 % 300))
     r5 = resample(cs, "5m")
     # trailing forming bucket dropped; all emitted buckets aggregate 5 bars
     assert len(r5) >= 2
