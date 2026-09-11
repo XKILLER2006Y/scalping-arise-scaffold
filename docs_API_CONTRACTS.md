@@ -30,3 +30,9 @@ One call does everything: `GET /api/v1/signal?symbol=XAU/USD&limit=250`
 - TradingView OANDA:XAUUSD SPOT (primary, no key — unofficial feed, auto-failover below)
 - Twelve Data XAU/USD SPOT (keyed via TWELVE_DATA_API_KEY)
 - yfinance GC=F FUTURES_PROXY (last resort, honestly labeled)
+
+## Realtime (adapted w/ permission, see ATTRIBUTION.md)
+- WS `/api/v1/ws` → live signal broadcast (history on connect, ping/pong)
+- POST `/api/v1/live/start|stop`, GET `/api/v1/live/status` (polls chain, recomputes on 1m close)
+- Signals carry issued_at/expires_at/entry_bar_ts; repeats dedupe; /signal refuses when not READY
+- Trade plans reject stale data (data_age_s > max_age_s)

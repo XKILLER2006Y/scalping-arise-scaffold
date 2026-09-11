@@ -7,7 +7,8 @@ from app.strategy.engine import evaluate_all
 from app.signals.engine import decide
 from app.trade_planning.engine import plan
 
-def prepare_bars(candles: list[Candle], warmup: int = 200, window: int = 400) -> list[dict]:
+def prepare_bars(candles: list[Candle], warmup: int = 200, window: int = 400,
+                   sparams: dict | None = None) -> list[dict]:
     """Expensive part, done ONCE: per-bar analysis + features + strategy evaluations.
 
     Param-dependent steps (confidence threshold, SL/TP sizing, simulation) stay
@@ -34,7 +35,7 @@ def prepare_bars(candles: list[Candle], warmup: int = 200, window: int = 400) ->
         closes = [c.close for c in hist]
         evs = evaluate_all(a.model_dump(), feats, hist[-1].close, closes=closes,
                            candle_count=len(hist),
-                           source_type=str(hist[0].source_type), mtf=htf)
+                           source_type=str(hist[0].source_type), mtf=htf, sparams=sparams)
         bars.append({"i": i, "entry": hist[-1].close, "atr": feats.get("atr14"),
                      "feats": feats, "evs": evs,
                      "ctx": {"session": a.session, "closes": closes[-10:],
@@ -46,12 +47,12 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
                  warmup: int = 200, horizon: int = 10, cost_per_trade: float = 0.3,
                  sl_mult: float = 1.5, tp_mult: float = 2.0, min_conf: int = 60,
                  return_all_trades: bool = False, window: int = 400,
-                 prep: list[dict] | None = None) -> dict:
+                 prep: list[dict] | None = None, sparams: dict | None = None) -> dict:
     trades: list[dict] = []
     equity_curve = [equity]
     cur = equity
     peak, max_dd = equity, 0.0
-    bars = prep if prep is not None else prepare_bars(candles, warmup, window)
+    bars = prep if prep is not None else prepare_bars(candles, warmup, window, sparams)
     cooldown_until = -1  # no stacking: one position per setup, re-arm after `horizon` bars
     for b in bars:
         i, entry, atr, feats, evs, ctx = (b["i"], b["entry"], b["atr"], b["feats"], b["evs"], b["ctx"])

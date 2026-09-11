@@ -19,3 +19,16 @@ Ported concepts + adapted code (rewritten to our dict-based pipeline, not copied
 
 His repo: https://github.com/Hash-sudo-cell/scalping-arise (Private license —
 ported with explicit permission from the author; no verbatim file copies).
+
+## Round 2 — realtime + decision hardening (permission granted)
+
+- `app/live/{lifecycle,health,manager}.py` — forming→closed state machine,
+  connection-health states, poll-driven live manager adapted from friend's
+  `market_data/live/{candle_lifecycle,connection_health,stream_manager}.py`
+  (his needs OANDA creds; ours polls our provider chain).
+- `app/stream/router.py` — `/ws` broadcast + history-for-late-joiners adapted
+  from his `api/v1/websocket.py`; `app/core/bus.py` from his `modules/events.py`.
+- `app/signals/lifecycle.py` — signal TTL/expiry, idempotent dedupe, readiness
+  gate adapted from his `decision/{expiration,idempotency,readiness}.py`.
+- Trade-plan freshness gate adapted from his `trade_planning/freshness.py`.
+- Look-ahead guard test concept from his `backtesting/look_ahead_guard.py`.

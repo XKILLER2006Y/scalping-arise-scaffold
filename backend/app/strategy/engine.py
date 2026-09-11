@@ -12,7 +12,11 @@ def _ema_stack_bear(f) -> bool:
     except Exception:
         return False
 
-def eval_trend_cont(analysis: dict, feats: dict, mtf: dict | None = None) -> dict:
+def eval_trend_cont(analysis: dict, feats: dict, mtf: dict | None = None,
+                      sparams: dict | None = None) -> dict:
+    sp = sparams or {}
+    adx_min = sp.get("adx_min", 20)
+    bos_req = sp.get("bos_required", True)
     met, missing = [], []
     bias = (mtf or {}).get("bias") or {}
     bias_trend = bias.get("trend")
@@ -48,10 +52,10 @@ def eval_trend_cont(analysis: dict, feats: dict, mtf: dict | None = None) -> dic
     else:
         missing.append(f"volatility {vol} not NORMAL/HIGH")
     adx = feats.get("adx14")
-    if adx is not None and adx >= 20:
-        met.append(f"ADX {adx:.1f}>=20 trend strength")
+    if adx is not None and adx >= adx_min:
+        met.append(f"ADX {adx:.1f}>={adx_min} trend strength")
     else:
-        missing.append(f"ADX {adx} < 20 (no trend strength)")
+        missing.append(f"ADX {adx} < {adx_min} (no trend strength)")
     ratio = feats.get("atr_ratio")
     if ratio is not None and 0.4 <= ratio <= 2.0:
         met.append(f"ATR-ratio {ratio:.2f} in 0.4-2.0")
@@ -59,8 +63,10 @@ def eval_trend_cont(analysis: dict, feats: dict, mtf: dict | None = None) -> dic
         missing.append(f"ATR-ratio {ratio} outside 0.4-2.0 (dead/spike)")
     if analysis.get("bos"):
         met.append("BOS=true")
-    else:
+    elif bos_req:
         missing.append("BOS=false")
+    else:
+        met.append("BOS not required (relaxed)")
     score = round(100 * len(met) / max(1, len(met) + len(missing)))
     return {"strategy": "TREND_CONT", "direction": direction, "qualified": not missing,
             "quality": score, "met": met, "missing": missing}
@@ -127,7 +133,9 @@ def _pullback_ok(direction: str | None, closes: list[float] | None) -> bool:
 
 
 def eval_pullback_cont(analysis: dict, feats: dict, closes: list[float] | None = None,
-                       mtf: dict | None = None) -> dict:
+                       mtf: dict | None = None, sparams: dict | None = None) -> dict:
+    sp = sparams or {}
+    adx_min = sp.get("adx_min", 20)
     """Standalone pullback-continuation strategy (ported concept from friend's
     pullback_continuation: underlying trend + pullback + S/R + momentum recovery)."""
     met, missing = [], []
@@ -169,10 +177,10 @@ def eval_pullback_cont(analysis: dict, feats: dict, closes: list[float] | None =
     else:
         missing.append(f"volatility {vol} not NORMAL/HIGH")
     adx = feats.get("adx14")
-    if adx is not None and adx >= 20:
-        met.append(f"ADX {adx:.1f}>=20")
+    if adx is not None and adx >= adx_min:
+        met.append(f"ADX {adx:.1f}>={adx_min}")
     else:
-        missing.append(f"ADX {adx} < 20")
+        missing.append(f"ADX {adx} < {adx_min}")
     ratio = feats.get("atr_ratio")
     if ratio is not None and 0.4 <= ratio <= 2.0:
         met.append(f"ATR-ratio {ratio:.2f} in range")
@@ -184,7 +192,8 @@ def eval_pullback_cont(analysis: dict, feats: dict, closes: list[float] | None =
 
 def evaluate_all(analysis: dict, features: dict, close: float | None = None,
                  closes: list[float] | None = None, candle_count: int = 0,
-                 source_type: str = "SPOT", mtf: dict | None = None) -> list[dict]:
+                 source_type: str = "SPOT", mtf: dict | None = None,
+                 sparams: dict | None = None) -> list[dict]:
     """Evaluate all strategies with eligibility pre-check and invalidation veto.
 
     mtf optionally carries higher-timeframe analyses: {"bias": {...}, "structure": {...}}.
@@ -196,8 +205,8 @@ def evaluate_all(analysis: dict, features: dict, close: float | None = None,
     feats = dict(features)
     feats["_close"] = close
     out = []
-    for sid, ev in (("TREND_CONT", eval_trend_cont(analysis, feats, mtf)),
-                    ("PULLBACK_CONT", eval_pullback_cont(analysis, feats, closes, mtf)),
+    for sid, ev in (("TREND_CONT", eval_trend_cont(analysis, feats, mtf, sparams)),
+                    ("PULLBACK_CONT", eval_pullback_cont(analysis, feats, closes, mtf, sparams)),
                     ("RANGE_FADE", eval_range_fade(analysis, feats, entry_price=close, mtf=mtf))):
         elig = check_eligibility(sid, analysis, feats, candle_count or len(closes or []), source_type)
         ev["eligibility"] = elig

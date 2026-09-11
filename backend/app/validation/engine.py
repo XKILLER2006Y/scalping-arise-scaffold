@@ -17,7 +17,18 @@ PARAM_GRID = {
     "sl_mult": [1.0, 1.5, 2.0],
     "tp_mult": [1.5, 2.0, 2.5],
     "min_conf": [50, 60, 70],
+    "adx_min": [15, 20],
+    "bos_required": [True, False],
 }
+
+
+def _combos(grid):
+    for sl in grid["sl_mult"]:
+        for tp in grid["tp_mult"]:
+            for mc in grid["min_conf"]:
+                for ax in grid.get("adx_min", [20]):
+                    for br in grid.get("bos_required", [True]):
+                        yield sl, tp, mc, {"adx_min": ax, "bos_required": br}
 
 
 def _pf_of(res: dict) -> float:
@@ -40,18 +51,18 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
         if len(is_c) <= warmup + 10 or len(oos_c) < 20:
             continue
         best, best_pf = None, -1.0
-        is_prep = prepare_bars(is_c, warmup)
-        for sl in grid["sl_mult"]:
-            for tp in grid["tp_mult"]:
-                for mc in grid["min_conf"]:
-                    r = run_backtest(is_c, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc, prep=is_prep)
-                    pf = _pf_of(r)
-                    if r["trades"] >= 5 and pf > best_pf:
-                        best, best_pf = (sl, tp, mc), pf
+        for sl, tp, mc, sp in _combos(grid):
+            is_prep = prepare_bars(is_c, warmup, sparams=sp)
+            r = run_backtest(is_c, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc,
+                             prep=is_prep, sparams=sp)
+            pf = _pf_of(r)
+            if r["trades"] >= 5 and pf > best_pf:
+                best, best_pf = (sl, tp, mc, sp), pf
         if best is None:
             continue
-        oos = run_backtest(oos_c, equity, risk_pct, warmup, 10, 0.3, *best,
-                                prep=prepare_bars(oos_c, warmup))
+        sl_b, tp_b, mc_b, sp_b = best
+        oos = run_backtest(oos_c, equity, risk_pct, warmup, 10, 0.3, sl_b, tp_b, mc_b,
+                           prep=prepare_bars(oos_c, warmup, sparams=sp_b), sparams=sp_b)
         # Collect OOS trade pnls for Monte Carlo.
         oos_trades.extend(oos.get("sample", []))
         eff = (_pf_of(oos) / best_pf) if best_pf > 0 else 0.0
@@ -117,13 +128,13 @@ def sensitivity(candles: list[Candle], equity: float = 10000.0, risk_pct: float 
                 warmup: int = 200, grid: dict | None = None) -> dict:
     grid = grid or PARAM_GRID
     rows = []
-    prep = prepare_bars(candles, warmup)
-    for sl in grid["sl_mult"]:
-        for tp in grid["tp_mult"]:
-            for mc in grid["min_conf"]:
-                r = run_backtest(candles, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc, prep=prep)
-                rows.append({"sl_mult": sl, "tp_mult": tp, "min_conf": mc,
-                             "trades": r["trades"], "pf": round(_pf_of(r), 2), "net": r["net_pnl"]})
+    for sl, tp, mc, sp in _combos(grid):
+        prep = prepare_bars(candles, warmup, sparams=sp)
+        r = run_backtest(candles, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc,
+                         prep=prep, sparams=sp)
+        rows.append({"sl_mult": sl, "tp_mult": tp, "min_conf": mc,
+                     "adx_min": sp["adx_min"], "bos_required": sp["bos_required"],
+                     "trades": r["trades"], "pf": round(_pf_of(r), 2), "net": r["net_pnl"]})
     good = [x for x in rows if x["pf"] >= 1.2 and x["trades"] >= 5]
     stability = round(len(good) / len(rows), 2)
     return {"grid": rows, "stable_fraction_pf_ge_1_2": stability,

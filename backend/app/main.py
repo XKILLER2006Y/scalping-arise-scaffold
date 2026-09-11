@@ -22,6 +22,7 @@ from app.intelligence.router import router as intel_router
 from app.backtesting.router import router as backtest_router
 from app.system.router import router as system_router
 from app.validation.router import router as validation_router
+from app.stream.router import router as stream_router, broadcast
 
 logger = get_logger("signal-bot")
 _START = __import__("time").time()
@@ -66,12 +67,29 @@ def create_app() -> FastAPI:
         c15, _ = get_candles(symbol, "15m", limit)
         out = full_trace(c1, c5, c15, symbol, equity, risk_pct, spread)
         out["data_meta"] = m1
+        # Readiness: refuse to signal on unready data (never alert on WARMING_UP).
+        from app.signals.lifecycle import readiness, stamp_expiry, is_duplicate
+        gate = readiness(m1, (out.get("features_mtf") or {}).get("timeframes", {}).get("1m", {}).get("status"))
+        out["readiness"] = gate
+        if not gate["ready"] and (out.get("signal") or {}).get("action") != "NO_TRADE":
+            out["signal"] = {"action": "NO_TRADE", "strategy": None, "direction": None,
+                             "confidence": 0, "quality": 0, "state": "NOT_READY",
+                             "reasons": [f"readiness blocked: {gate['blocked_by']}"]}
+            out["trade_plan"] = {"feasible": False, "reason": "not ready"}
+        # Expiry stamp + dedupe flag (idempotent alerts: same setup alerts once).
+        if isinstance(out.get("signal"), dict):
+            bar_ts = c1[-1].timestamp if c1 else None
+            out["signal"] = stamp_expiry(out["signal"], bar_ts=bar_ts)
+            out["signal"]["duplicate_suppressed"] = is_duplicate(out["signal"])
         return out
 
     for r in (market_data_router, market_analysis_router, technical_features_router,
               strategy_router, signals_router, trade_router, intel_router, backtest_router,
-              system_router, validation_router):
+              system_router, validation_router, stream_router):
         app.include_router(r, prefix="/api/v1")
+    # Fan out live signals to WS clients.
+    from app.core.bus import get_bus
+    get_bus().subscribe("signal", broadcast)
     return app
 
 app = create_app()

@@ -3,7 +3,14 @@ import math
 def create_plan(signal: dict, entry: float, atr: float | None, equity: float = 10000.0,
          risk_pct: float = 1.0, spread: float = 0.3, contract_oz: float = 100.0,
          extra_cost: float = 0.2, ml_confidence: float = 50.0,
-         sl_mult: float = 1.5, tp_mult: float = 2.0) -> dict:
+         sl_mult: float = 1.5, tp_mult: float = 2.0,
+         data_age_s: float | None = None, max_age_s: float = 120.0) -> dict:
+    # Freshness gate (adapted from friend's trade_planning/freshness.py):
+    # a plan built on stale quotes is worse than no plan.
+    if data_age_s is not None and data_age_s > max_age_s:
+        return {"action": "NO_TRADE", "direction": None, "feasible": False,
+                "reason": f"stale data: age {data_age_s:.0f}s exceeds {max_age_s:.0f}s",
+                "signal": signal, "entry": entry, "stop": None, "take_profit": None}
     if (
         signal.get("action") == "NO_TRADE"
         or atr is None
