@@ -37,12 +37,26 @@ def audit_log(lines: int = 20):
     """Read-only tail of the month-audit progress log. Observability only:
     touches no strategy code, changes no numbers."""
     from pathlib import Path
+    import json as _json
+    import os
+    out: dict = {"log": None, "tail": [], "progress": None}
     for p in ("/tmp/audit_month.log", "/tmp/trial3.log"):
         f = Path(p)
         if f.exists():
-            tail = f.read_text()[-4000:].splitlines()[-lines:]
-            return {"log": p, "tail": tail}
-    return {"log": None, "tail": ["no audit log found"]}
+            out["log"] = p
+            out["tail"] = f.read_text()[-4000:].splitlines()[-lines:]
+            break
+    pf = Path(os.getenv("AUDIT_PROGRESS_FILE", "/tmp/audit_progress.jsonl"))
+    if pf.exists():
+        try:
+            rows = [ _json.loads(l) for l in pf.read_text().splitlines() if l.strip() ]
+            out["progress"] = rows[-30:]
+            out["latest"] = rows[-1] if rows else None
+        except Exception:
+            pass
+    if out["log"] is None:
+        out["tail"] = ["no audit log found"]
+    return out
 
 @router.get("/trace-quick")
 def trace_quick(symbol: str = "XAU/USD", limit: int = 250, equity: float = 10000.0,

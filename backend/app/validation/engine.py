@@ -38,7 +38,9 @@ def _pf_of(res: dict) -> float:
 
 def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
                  risk_pct: float = 1.0, warmup: int = 200, grid: dict | None = None) -> dict:
+    from app.validation.progress import emit as _emit
     grid = grid or PARAM_GRID
+    combos = list(_combos(grid))
     n = len(candles)
     fold_rows: list[dict] = []
     oos_trades: list[dict] = []
@@ -51,13 +53,16 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
         if len(is_c) <= warmup + 10 or len(oos_c) < 20:
             continue
         best, best_pf = None, -1.0
-        for sl, tp, mc, sp in _combos(grid):
+        for k, (sl, tp, mc, sp) in enumerate(combos):
             is_prep = prepare_bars(is_c, warmup, sparams=sp)
             r = run_backtest(is_c, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc,
                              prep=is_prep, sparams=sp)
             pf = _pf_of(r)
             if r["trades"] >= 5 and pf > best_pf:
                 best, best_pf = (sl, tp, mc, sp), pf
+            if k % 12 == 0:
+                _emit("walk-forward", f * len(combos) + k, folds * len(combos),
+                      f"fold {f} IS search {k}/{len(combos)}")
         if best is None:
             continue
         sl_b, tp_b, mc_b, sp_b = best
@@ -128,14 +133,18 @@ def monte_carlo(trade_pnls: list[float], sims: int = 1000, seed: int = 7,
 def sensitivity(candles: list[Candle], equity: float = 10000.0, risk_pct: float = 1.0,
                 warmup: int = 200, grid: dict | None = None) -> dict:
     grid = grid or PARAM_GRID
+    combos = list(_combos(grid))
     rows = []
-    for sl, tp, mc, sp in _combos(grid):
+    for k, (sl, tp, mc, sp) in enumerate(combos):
+        from app.validation.progress import emit as _emit2
         prep = prepare_bars(candles, warmup, sparams=sp)
         r = run_backtest(candles, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc,
                          prep=prep, sparams=sp)
         rows.append({"sl_mult": sl, "tp_mult": tp, "min_conf": mc,
                      "adx_min": sp["adx_min"], "bos_required": sp["bos_required"],
                      "trades": r["trades"], "pf": round(_pf_of(r), 2), "net": r["net_pnl"]})
+        if k % 9 == 0:
+            _emit2("sensitivity", k + 1, len(combos), f"combo {k + 1}/{len(combos)}")
     good = [x for x in rows if x["pf"] >= 1.2 and x["trades"] >= 5]
     stability = round(len(good) / len(rows), 2)
     return {"grid": rows, "stable_fraction_pf_ge_1_2": stability,
@@ -162,12 +171,19 @@ def benchmark_gate(candles: list[Candle], net_pnl: float, equity: float = 10000.
 
 def full_audit(candles: list[Candle], equity: float = 10000.0, risk_pct: float = 1.0,
                warmup: int = 200, folds: int = 3, grid: dict | None = None) -> dict:
+    from app.validation.progress import emit as _emit3, reset as _reset3
+    _reset3()
+    _emit3("base-backtest", 0, 100, "running base backtest")
     base = run_backtest(candles, equity, risk_pct, warmup, return_all_trades=True,
                              prep=prepare_bars(candles, warmup))
+    _emit3("base-backtest", 100, 100, f"{base['trades']} trades")
     wf = walk_forward(candles, folds, equity, risk_pct, warmup, grid)
+    _emit3("walk-forward", 100, 100, wf["verdict"])
     mc = monte_carlo([t["pnl"] for t in base.get("trades_full", [])])
     oos_mc = monte_carlo(wf.get("oos_pnls", []))
+    _emit3("monte-carlo", 100, 100, str(mc.get("verdict")))
     sens = sensitivity(candles, equity, risk_pct, warmup, grid)
+    _emit3("sensitivity", 100, 100, sens["verdict"])
     bench = benchmark_gate(candles, base["net_pnl"], equity)
     reasons = []
     if wf["verdict"] != "ROBUST":

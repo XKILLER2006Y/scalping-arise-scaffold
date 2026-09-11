@@ -70,6 +70,11 @@ export default function Page() {
         <div>Paper loop: {watch.paper?.running ? "RUNNING" : "STOPPED"} · cycles {watch.paper?.cycles} · open {watch.paper?.paper?.open} · closed {watch.paper?.paper?.closed} · win {watch.paper?.paper?.win_rate}</div>
         <div>Divergence: {watch.divergence?.status} {watch.divergence?.reason || watch.divergence?.gap_r || ""}</div>
         <div style={{ color: "#666", fontSize: 12 }}>Month audit log ({watch.audit?.log || "none"}) — updated {watch.at}</div>
+        {watch.audit?.latest && (
+          <div style={{ fontSize: 16, margin: "6px 0" }}>
+            ⚙️ {watch.audit.latest.phase}: {watch.audit.latest.pct}% — {watch.audit.latest.detail}
+          </div>
+        )}
         <Pre data={(watch.audit?.tail || []).join("\n")} />
       </>) : <span style={{ color: "#777" }}>Connecting to live status…</span>}
     </Card>

@@ -44,3 +44,12 @@ def test_full_audit():
     for k in ("base", "walk_forward", "monte_carlo", "sensitivity", "benchmark", "final_gate"):
         assert k in j
     assert j["final_gate"] in ("PROMOTE", "WAIT", "REJECT")
+
+def test_progress_stream(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setenv("AUDIT_PROGRESS_FILE", str(tmp_path / "prog.jsonl"))
+    from app.validation.progress import emit, reset
+    reset()
+    emit("sensitivity", 5, 108, "combo 5/108")
+    rows = [json.loads(l) for l in open(tmp_path / "prog.jsonl")]
+    assert rows[0]["phase"] == "start" and rows[-1]["pct"] == round(100 * 5 / 108, 1)
