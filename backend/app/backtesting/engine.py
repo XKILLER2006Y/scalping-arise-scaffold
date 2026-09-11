@@ -1,7 +1,8 @@
 """Phase 9: event-driven backtest on candle list. Simplified SL/TP touch simulation."""
+import bisect
 from app.market_data.models import Candle
 from app.market_analysis.engine import analyze
-from app.market_data.resample import resample, closed_asof
+from app.market_data.resample import resample
 from app.technical_features.engine import compute_single_timeframe
 from app.strategy.engine import evaluate_all
 from app.signals.engine import decide
@@ -16,18 +17,27 @@ def prepare_bars(candles: list[Candle], warmup: int = 200, window: int = 400,
     instead of 27x full pipelines.
     """
     bars: list[dict] = []
-    htf5 = resample(candles, "5m")
     htf15 = resample(candles, "15m")
+    t15 = [c.timestamp for c in htf15]  # hoisted: closed_asof was rebuilding this per bar (O(n^2))
+    bias_cache: dict = {}  # keyed by (len, last-ts): 15m closed set changes ~1/15 bars
     for i in range(warmup, len(candles)):
         hist = candles[max(0, i + 1 - window):i + 1]
         ts = candles[i].timestamp
         a = analyze(hist, now_ts=ts)
         # HTF context from CLOSED resampled bars only (no look-ahead by construction).
-        c5 = closed_asof(htf5, ts)
-        c15 = closed_asof(htf15, ts)
-        a5 = analyze(c5) if len(c5) >= 20 else None
-        a15 = analyze(c15) if len(c15) >= 20 else None
-        htf = {"bias": (a15 or a5 or a).model_dump(), "structure": (a5 or a).model_dump()}
+        # Bias cache: the 15m closed set changes ~1 bar in 15, so ~14/15 analyze()
+        # calls were pure waste. (The old 5m "structure" analysis was never read
+        # by any evaluator — deleted, not worked around.)
+        k15 = bisect.bisect_right(t15, ts)
+        c15 = htf15[:k15]
+        if len(c15) >= 20:
+            bkey = (len(c15), c15[-1].timestamp)
+            if bkey not in bias_cache:
+                bias_cache[bkey] = analyze(c15).model_dump()
+            bias = bias_cache[bkey]
+        else:
+            bias = a.model_dump()
+        htf = {"bias": bias}
         f = compute_single_timeframe(hist, "1m")
         feats = dict(f["features"])
         feats["volatility"] = f["volatility"]
@@ -49,7 +59,6 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
                  return_all_trades: bool = False, window: int = 400,
                  prep: list[dict] | None = None, sparams: dict | None = None) -> dict:
     trades: list[dict] = []
-    equity_curve = [equity]
     cur = equity
     peak, max_dd = equity, 0.0
     bars = prep if prep is not None else prepare_bars(candles, warmup, window, sparams)
@@ -91,7 +100,6 @@ def run_backtest(candles: list[Candle], equity: float = 10000.0, risk_pct: float
         risk_money = cur * risk_pct / 100.0
         pnl = r_mult * risk_money - cost_per_trade  # spread/commission drag + TIME exit at `horizon` bars
         cur += pnl
-        equity_curve.append(cur)
         peak = max(peak, cur)
         max_dd = max(max_dd, (peak - cur) / peak * 100 if peak else 0)
         trades.append({"i": i, "strategy": sig["strategy"], "direction": direction,

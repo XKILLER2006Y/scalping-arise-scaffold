@@ -2,7 +2,7 @@
 import time
 from app.core.config import settings
 from app.market_data.models import Candle
-from app.technical_features.indicators import ema, rsi, macd, atr, bollinger, sma, zscore, adx, vwap, atr_pct_series, percentile_bands, cvd, volume_profile, garman_klass
+from app.technical_features.indicators import ema, rsi, macd, atr, bollinger, sma, zscore, adx, vwap, percentile_bands, cvd, volume_profile, garman_klass
 
 SUPPORTED_TFS = ["1m", "5m", "15m"]
 FULL_READY_REQUIRED = 200  # EMA200 warm-up
@@ -89,7 +89,7 @@ def compute_single_timeframe(candles: list[Candle], timeframe: str, symbol: str 
     # Adaptive bands from this window's own ATR% history (percentile regimes travel
     # across volatility regimes; fixed absolute bands do not). Falls back to config
     # bands when history is thin.
-    hist_pcts = [x for x in atr_pct_series(highs, lows, closes, 14) if x is not None]
+    hist_pcts = [(x / c) for x, c in zip(a, closes) if x is not None and c]
     bands = percentile_bands(hist_pcts[-200:]) if len(hist_pcts) >= 60 else None
     vol_class, atr_pct = classify_volatility(a[last], closes[last], bands)
     e200_ready = e200[last] is not None
@@ -125,10 +125,6 @@ def compute_single_timeframe(candles: list[Candle], timeframe: str, symbol: str 
         "source_type": st, "provider_instrument": candles[0].provider_instrument,
         "candle_count": n, "timestamp": int(time.time()),
     }
-
-def compute_features(candles: list[Candle], symbol: str = "XAU/USD") -> dict:
-    # Backward-compat single-TF (defaults 1m). Now includes extension fields.
-    return compute_single_timeframe(candles, "1m", symbol)
 
 def compute_mtf(candles_by_tf: dict[str, list[Candle]], symbol: str = "XAU/USD") -> dict:
     # Each TF computed independently from its own closed candles only.

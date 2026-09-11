@@ -62,9 +62,10 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
             continue
         sl_b, tp_b, mc_b, sp_b = best
         oos = run_backtest(oos_c, equity, risk_pct, warmup, 10, 0.3, sl_b, tp_b, mc_b,
-                           prep=prepare_bars(oos_c, warmup, sparams=sp_b), sparams=sp_b)
-        # Collect OOS trade pnls for Monte Carlo.
-        oos_trades.extend(oos.get("sample", []))
+                           prep=prepare_bars(oos_c, warmup, sparams=sp_b), sparams=sp_b,
+                           return_all_trades=True)
+        # Full OOS economics (not the capped sample): feeds the OOS Monte Carlo.
+        oos_trades.extend(oos.get("trades_full", []))
         eff = (_pf_of(oos) / best_pf) if best_pf > 0 else 0.0
         thin = oos["trades"] < 5
         fold_rows.append({"fold": f, "is_pf": round(best_pf, 2), "params": best,
@@ -87,7 +88,7 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
     else:
         verdict = "WEAK"
     return {"folds": fold_rows, "avg_wf_efficiency": avg_eff, "avg_oos_pf": avg_oos_pf,
-            "verdict": verdict,
+            "verdict": verdict, "oos_pnls": [t["pnl"] for t in oos_trades],
             "note": "ROBUST needs >=2 solid (>=5-trade OOS) folds, >=2 with eff>=0.4, avg>=0.5"}
 
 
@@ -165,6 +166,7 @@ def full_audit(candles: list[Candle], equity: float = 10000.0, risk_pct: float =
                              prep=prepare_bars(candles, warmup))
     wf = walk_forward(candles, folds, equity, risk_pct, warmup, grid)
     mc = monte_carlo([t["pnl"] for t in base.get("trades_full", [])])
+    oos_mc = monte_carlo(wf.get("oos_pnls", []))
     sens = sensitivity(candles, equity, risk_pct, warmup, grid)
     bench = benchmark_gate(candles, base["net_pnl"], equity)
     reasons = []
@@ -172,6 +174,8 @@ def full_audit(candles: list[Candle], equity: float = 10000.0, risk_pct: float =
         reasons.append(f"walk-forward {wf['verdict']} (eff {wf['avg_wf_efficiency']})")
     if mc.get("verdict") != "ROBUST":
         reasons.append(f"monte-carlo {mc.get('verdict')} (P(bad-path)={mc.get('p_bad_path')})")
+    if oos_mc.get("verdict") not in ("ROBUST", "NO_TRADES"):
+        reasons.append(f"OOS monte-carlo {oos_mc.get('verdict')} (P(bad-path)={oos_mc.get('p_bad_path')})")
     if sens["verdict"] != "STABLE":
         reasons.append(f"sensitivity {sens['verdict']} ({sens['stable_fraction_pf_ge_1_2']})")
     if not bench["passed"]:
@@ -188,5 +192,5 @@ def full_audit(candles: list[Candle], equity: float = 10000.0, risk_pct: float =
     gate = {2: "PROMOTE", 1: "WAIT", 0: "REJECT"}[level]
     return {"base": {k: base[k] for k in ("trades", "win_rate", "profit_factor", "net_pnl",
                                          "max_drawdown_pct", "gate")},
-            "walk_forward": wf, "monte_carlo": mc, "sensitivity": sens,
+            "walk_forward": wf, "monte_carlo": mc, "oos_monte_carlo": oos_mc, "sensitivity": sens,
             "benchmark": bench, "final_gate": gate, "final_reasons": reasons}

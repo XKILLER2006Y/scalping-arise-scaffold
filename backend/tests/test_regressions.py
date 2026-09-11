@@ -33,13 +33,31 @@ def test_enum_source_accepted():
         assert check_eligibility("TREND_CONT", a, f, 250, st)["eligible"], st
 
 
-def test_backtest_produces_trades():
-    # A backtest that silently trades nothing is a broken backtest.
-    # NOTE: timestamps must span killzones (LONDON/NY) — the session gate
-    # correctly vetoes OFF/ASIA bars, so a window stuck at night trades nothing.
+def _trending_series(n=700, drift=0.8, noise=0.6, dip_at=300, dip_n=7, dip_depth=1.0, seed=12):
+    """Deterministic trend -> pullback -> recovery. Pure noise must yield nothing;
+    THIS series must yield at least one trade, proving the funnel flows."""
     import datetime
+    import random
+    from app.market_data.models import Candle, SourceType
     day = datetime.datetime.now(datetime.timezone.utc).replace(hour=6, minute=30, second=0, microsecond=0)
-    start = int(day.timestamp())
-    cs = synth_candles("twelve_data", "XAU/USD", SourceType.SPOT, n=700, start=start)
-    r = run_backtest(cs)
-    assert r["trades"] > 0, f"0 trades: {r['gate_reasons']}"
+    t0 = int(day.timestamp())
+    rng = random.Random(seed)
+    px, cs = 2650.0, []
+    for i in range(n):
+        d = drift + rng.uniform(-noise, noise)
+        if dip_at <= i < dip_at + dip_n:
+            d -= dip_depth
+        o, c = px, px + d
+        cs.append(Candle(timestamp=t0 + i * 60, open=o, high=max(o, c) + 0.3,
+                         low=min(o, c) - 0.3, close=c, volume=1500.0,
+                         provider_instrument="XAU/USD", source="twelve_data",
+                         source_type=SourceType.SPOT))
+        px = c
+    return cs
+
+
+def test_backtest_produces_trades():
+    # A backtest that silently trades nothing on a textbook setup is broken.
+    # (Pure noise SHOULD yield ~0 — that assertion would demand trading randomness.)
+    r = run_backtest(_trending_series())
+    assert r["trades"] > 0, f"0 trades on trend+pullback+recovery: {r['gate_reasons']}"

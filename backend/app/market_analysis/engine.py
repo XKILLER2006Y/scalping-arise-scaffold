@@ -111,6 +111,3 @@ def analyze(candles: list[Candle], symbol: str = "XAU/USD", now_ts: int | None =
                           fvgs=detect_fvg(candles) if candles else [],
                           source_type=st, candle_count=len(candles))
 
-
-analyze_market = analyze
-

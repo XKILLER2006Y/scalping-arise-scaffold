@@ -42,13 +42,11 @@ def evaluate_quick(symbol: str = "XAU/USD", timeframe: str = Query("1m"), limit:
     from app.technical_features.engine import compute_single_timeframe
     candles, mmeta = get_candles(symbol, timeframe, limit)
     a = analyze(candles, symbol)
-    htf5 = resample(candles, "5m")
     htf15 = resample(candles, "15m")
     ts = candles[-1].timestamp if candles else 0
-    c5, c15 = closed_asof(htf5, ts), closed_asof(htf15, ts)
-    a5 = analyze(c5, symbol) if len(c5) >= 20 else None
+    c15 = closed_asof(htf15, ts)
     a15 = analyze(c15, symbol) if len(c15) >= 20 else None
-    htf = {"bias": (a15 or a5 or a).model_dump(), "structure": (a5 or a).model_dump()}
+    htf = {"bias": (a15 or a).model_dump()}
     f = compute_single_timeframe(candles, timeframe, symbol)
     feats = dict(f["features"])
     feats["volatility"] = f["volatility"]

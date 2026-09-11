@@ -2,7 +2,7 @@ import math
 
 def create_plan(signal: dict, entry: float, atr: float | None, equity: float = 10000.0,
          risk_pct: float = 1.0, spread: float = 0.3, contract_oz: float = 100.0,
-         extra_cost: float = 0.2, ml_confidence: float = 50.0,
+         extra_cost: float = 0.2,
          sl_mult: float = 1.5, tp_mult: float = 2.0,
          data_age_s: float | None = None, max_age_s: float = 120.0) -> dict:
     # Freshness gate (adapted from friend's trade_planning/freshness.py):
@@ -45,30 +45,9 @@ def create_plan(signal: dict, entry: float, atr: float | None, equity: float = 1
     tp = entry + tp_dist if direction == "LONG" else entry - tp_dist
     rr = tp_dist / sl_dist if sl_dist else 0
     
-    # Sanitize and clamp ml_confidence to [0.0, 100.0]
-    try:
-        if ml_confidence is None:
-            clean_ml_conf = 50.0
-        else:
-            f_conf = float(ml_confidence)
-            if math.isnan(f_conf) or math.isinf(f_conf):
-                clean_ml_conf = 50.0
-            else:
-                clean_ml_conf = max(0.0, min(100.0, f_conf))
-    except (ValueError, TypeError):
-        clean_ml_conf = 50.0
-
-    # Kelly Criterion for position sizing based on ML confidence
-    p = (clean_ml_conf / 100.0)
-    q = 1.0 - p
-    b = rr
-    if b > 0 and p > 0.5:
-        f_star = (p * b - q) / b
-        kelly_fraction = max(0.0, min(f_star * 0.5, 0.02)) # Half-Kelly, capped at 2% risk
-    else:
-        kelly_fraction = (risk_pct / 100.0) if risk_pct else 0.01 # Fallback to static risk
-    
-    risk_money = equity * kelly_fraction
+    # Static fractional risk. (A Kelly branch lived here, fed only by a deleted
+    # ML model that always passed the default 50.0 — dead code, removed.)
+    risk_money = equity * (risk_pct / 100.0) if risk_pct else equity * 0.01
     lots_raw = risk_money / (sl_dist * contract_oz) if sl_dist else 0
     if math.isnan(lots_raw) or math.isinf(lots_raw) or lots_raw < 0:
         lots = 0.0

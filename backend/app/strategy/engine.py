@@ -30,20 +30,16 @@ def eval_trend_cont(analysis: dict, feats: dict, mtf: dict | None = None,
             missing.append(f"entry timeframe disagrees (bias {trend} vs entry {entry_trend})")
     else:
         missing.append(f"trend must be UPTREND/DOWNTREND, got {trend}")
-    rsi = feats.get("rsi14")
     direction = "LONG" if trend == "UPTREND" else ("SHORT" if trend == "DOWNTREND" else None)
     if direction == "LONG":
         (met if _ema_stack_bull(feats) else missing).append("EMA20>EMA50" if _ema_stack_bull(feats) else "EMA stack not bullish")
-        if rsi is not None and 50 <= rsi <= 80:
-            met.append(f"RSI {rsi:.1f} in 50-80 (trend zone)")
-        else:
-            missing.append(f"RSI {rsi} not in 50-80")
+        # No RSI band here by design: entry timing belongs to the Phase 6 pullback
+        # state machine (ARMED->CONFIRMED). An RSI entry band contradicts it —
+        # real trends pin RSI hot straight through the pullbacks we buy.
+        met.append("RSI gate delegated to pullback state machine")
     elif direction == "SHORT":
         (met if _ema_stack_bear(feats) else missing).append("EMA20<EMA50" if _ema_stack_bear(feats) else "EMA stack not bearish")
-        if rsi is not None and 20 <= rsi <= 50:
-            met.append(f"RSI {rsi:.1f} in 20-50 (trend zone)")
-        else:
-            missing.append(f"RSI {rsi} not in 20-50")
+        met.append("RSI gate delegated to pullback state machine")
     else:
         missing.append("no direction (trend RANGE)")
     vol = feats.get("_volatility") or feats.get("volatility") or ""
@@ -123,13 +119,26 @@ def eval_range_fade(analysis: dict, feats: dict, entry_price: float | None = Non
 
 
 def _pullback_ok(direction: str | None, closes: list[float] | None) -> bool:
-    # Local copy of the Phase 6 pullback rule (strategy must not import Phase 6):
-    # 1-3 counter-trend closes in the last 5.
+    # Local copy of the Phase 6 pullback rule (strategy must not import Phase 6).
+    # Keep in sync with signals.pullback_ok: (a) 1-3 counter closes in last 5,
+    # or (b) V-recovery off a 15-bar extreme 3+ bars back with 3 resuming closes.
     if not direction or not closes or len(closes) < 6:
         return False
     last5 = [closes[i] - closes[i - 1] for i in range(len(closes) - 5, len(closes))]
     counter = sum(1 for d in last5 if (d < 0 if direction == "LONG" else d > 0))
-    return 1 <= counter <= 3
+    if 1 <= counter <= 3:
+        return True
+    if len(closes) >= 8:
+        window = closes[-15:]
+        if direction == "LONG":
+            trough = min(range(len(window)), key=lambda k: window[k])
+            if len(window) - 1 - trough >= 3 and closes[-1] > closes[-2] > closes[-3]:
+                return True
+        else:
+            peak = max(range(len(window)), key=lambda k: window[k])
+            if len(window) - 1 - peak >= 3 and closes[-1] < closes[-2] < closes[-3]:
+                return True
+    return False
 
 
 def eval_pullback_cont(analysis: dict, feats: dict, closes: list[float] | None = None,

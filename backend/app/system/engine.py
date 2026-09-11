@@ -28,9 +28,9 @@ def full_trace(candles_1m, candles_5m, candles_15m, symbol="XAU/USD", equity=100
     mtf = compute_mtf({"1m": candles_1m, "5m": candles_5m, "15m": candles_15m}, symbol)
     entry_tf = mtf["timeframes"]["1m"]
     a = analyze(candles_1m, symbol)
-    a5 = analyze(candles_5m, symbol) if len(candles_5m) >= 20 else None
+    # Bias-only HTF design: 15m trend orients entries; 5m candles feed features only.
     a15 = analyze(candles_15m, symbol) if len(candles_15m) >= 20 else None
-    htf = {"bias": (a15 or a5 or a).model_dump(), "structure": (a5 or a).model_dump()}
+    htf = {"bias": (a15 or a).model_dump()}
     feats = dict(entry_tf["features"]); feats["volatility"] = entry_tf["volatility"]
     closes_all = [c.close for c in candles_1m]
     evs = evaluate_all(a.model_dump(), feats, candles_1m[-1].close if candles_1m else None,

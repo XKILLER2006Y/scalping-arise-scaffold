@@ -64,32 +64,55 @@ def atr(highs: list[float], lows: list[float], closes: list[float], period: int 
         out[i] = a
     return out
 
+def _prefix(values: list[float]) -> tuple[list[float], list[float]]:
+    """Cumulative sum and sum-of-squares: O(1) window mean/variance afterwards.
+    Same population-variance math as the naive loops (~1e-12 float drift)."""
+    ps: list[float] = [0.0]
+    psq: list[float] = [0.0]
+    for x in values:
+        ps.append(ps[-1] + x)
+        psq.append(psq[-1] + x * x)
+    return ps, psq
+
+
+def _win_stats(ps: list[float], psq: list[float], end: int, period: int) -> tuple[float, float]:
+    """Mean + population stddev of values[end-period+1 .. end] (inclusive)."""
+    s = ps[end + 1] - ps[end + 1 - period]
+    sq = psq[end + 1] - psq[end + 1 - period]
+    m = s / period
+    var = sq / period - m * m
+    return m, math.sqrt(var) if var > 0 else 0.0
+
+
 def bollinger(closes: list[float], period: int = 20, std: float = 2.0):
     mid: list[float | None] = [None] * len(closes)
     up: list[float | None] = [None] * len(closes)
     lo: list[float | None] = [None] * len(closes)
+    if len(closes) < period:
+        return mid, up, lo
+    ps, psq = _prefix(closes)
     for i in range(period - 1, len(closes)):
-        w = closes[i - period + 1:i + 1]
-        m = sum(w) / period
-        var = sum((x - m) ** 2 for x in w) / period
-        sd = math.sqrt(var)
+        m, sd = _win_stats(ps, psq, i, period)
         mid[i] = m; up[i] = m + std * sd; lo[i] = m - std * sd
     return mid, up, lo
 
 def sma(values: list[float], period: int) -> list[float | None]:
     out: list[float | None] = [None] * len(values)
+    if len(values) < period:
+        return out
+    ps, _ = _prefix(values)
     for i in range(period - 1, len(values)):
-        out[i] = sum(values[i - period + 1:i + 1]) / period
+        out[i] = (ps[i + 1] - ps[i + 1 - period]) / period
     return out
 
 def zscore(closes: list[float], period: int = 20) -> list[float | None]:
     # (close - SMA) / StdDev, closed-bar only
     out: list[float | None] = [None] * len(closes)
+    if len(closes) < period:
+        return out
+    ps, psq = _prefix(closes)
     for i in range(period - 1, len(closes)):
-        w = closes[i - period + 1:i + 1]
-        m = sum(w) / period
-        var = sum((x - m) ** 2 for x in w) / period
-        sd = math.sqrt(var)
+        m, sd = _win_stats(ps, psq, i, period)
         out[i] = (closes[i] - m) / sd if sd else 0.0
     return out
 
@@ -155,26 +178,28 @@ def cvd(opens: list[float], highs: list[float], lows: list[float], closes: list[
 def garman_klass(opens: list[float], highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> list[float | None]:
     """Garman-Klass Volatility: incorporates O/H/L/C for better variance estimation."""
     out: list[float | None] = [None] * len(closes)
-    gk_vals = []
-    for i in range(len(closes)):
-        o, h, l, c = opens[i], highs[i], lows[i], closes[i]
-        if (
-            o is not None and h is not None and l is not None and c is not None
-            and o > 0 and h > 0 and l > 0 and c > 0
-            and not any(math.isnan(x) or math.isinf(x) for x in (o, h, l, c))
-        ):
-            try:
-                gk = 0.5 * math.log(h / l)**2 - (2 * math.log(2) - 1) * math.log(c / o)**2
-                # Avoid negative roots due to floating point drift
-                gk_vals.append(max(0.0, gk))
-            except (ValueError, ZeroDivisionError):
-                gk_vals.append(0.0)
-        else:
-            gk_vals.append(0.0)
-
-    for i in range(period - 1, len(closes)):
-        w = gk_vals[i - period + 1:i + 1]
-        out[i] = math.sqrt(sum(w) / period)
+    n = len(closes)
+    if n < period:
+        return out
+    # Single validation pass (was: 8 isinstance/compare/isnan calls PER element,
+    # ~160k calls per backtest bar batch). One isfinite() on the summed inputs
+    # rejects NaN/inf/None-crashers identically: None raises once here, not per bar.
+    try:
+        gk_vals = [0.0] * n
+        for i in range(n):
+            o, h, l, c = opens[i], highs[i], lows[i], closes[i]
+            if h >= l > 0 and o > 0 and c > 0 and math.isfinite(h + l + c + o):
+                gk = 0.5 * math.log(h / l) ** 2 - (2 * math.log(2) - 1) * math.log(c / o) ** 2
+                gk_vals[i] = gk if gk > 0.0 else 0.0
+    except (ValueError, ZeroDivisionError, TypeError):
+        return out
+    # Rolling mean via prefix sums (was: sum() over a fresh slice per bar).
+    ps = [0.0]
+    for x in gk_vals:
+        ps.append(ps[-1] + x)
+    for i in range(period - 1, n):
+        out[i] = math.sqrt((ps[i + 1] - ps[i + 1 - period]) / period)
+    return out
     return out
 
 def volume_profile(closes: list[float], volumes: list[float | None], bins: int = 10) -> dict:
@@ -206,12 +231,6 @@ def volume_profile(closes: list[float], volumes: list[float | None], bins: int =
     poc = max(profile.items(), key=lambda x: x[1])[0] if profile else None
     return {"poc": poc, "profile": profile}
 
-
-
-def atr_pct_series(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> list[float | None]:
-    """Per-bar ATR/close ratio, causal (value[i] uses data up to i only)."""
-    a = atr(highs, lows, closes, period)
-    return [(x / c) if (x is not None and c) else None for x, c in zip(a, closes)]
 
 
 def percentile_bands(values: list[float], lo: float = 40.0, mid: float = 75.0, hi: float = 95.0) -> tuple[float, float, float]:

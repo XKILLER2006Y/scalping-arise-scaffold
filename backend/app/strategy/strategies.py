@@ -1,12 +1,12 @@
 """Phase 5: explicit strategy definitions. Evaluation only — no orders."""
 STRATEGIES = {
     "TREND_CONT": {
-        "description": "Trend continuation: trade with BOS-confirmed trend, EMA stack, RSI momentum, pullback entry.",
+        "description": "Trend continuation: BOS-confirmed trend + EMA stack + ADX/ATR gates. Entry timing delegated to pullback state machine.",
         "timeframes": {"bias": "15m", "structure": "5m", "entry": "1m"},
         "rules": [
             "trend is UPTREND or DOWNTREND (no RANGE)",
             "close above EMA20 above EMA50 for long / below for short",
-            "RSI 50-80 long / 20-50 short (trend zone, extremes excluded)",
+            "RSI timing delegated to pullback state machine (no entry band by design)",
             "volatility NORMAL or HIGH (never LOW/EXTREME)",
             "ADX>=20 trend strength; ATR-ratio 0.4-2.0 (no dead/spike market)",
             "BOS true",

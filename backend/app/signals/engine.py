@@ -4,12 +4,28 @@ import time
 KILLZONES = ("LONDON", "NEW_YORK")
 
 def pullback_ok(direction: str | None, closes: list[float]) -> bool:
-    # 1-3 counter-trend closes in last 5 (cf. backtrader pullback window)
+    # Two shapes of the same idea (cf. backtrader pullback window):
+    # (a) shallow/ongoing pullback: 1-3 counter-trend closes in the last 5;
+    # (b) V-recovery: the 15-bar extreme sits 3+ bars back with 3 closes
+    #     resuming trend-ward. (a) alone misses post-recovery entries because
+    #     by the time price resumes, the trailing window is all trend-ward.
     if not direction or len(closes) < 6:
         return False
     last5 = [closes[i] - closes[i-1] for i in range(len(closes)-5, len(closes))]
     counter = sum(1 for d in last5 if (d < 0 if direction == "LONG" else d > 0))
-    return 1 <= counter <= 3
+    if 1 <= counter <= 3:
+        return True
+    if len(closes) >= 8:
+        window = closes[-15:]
+        if direction == "LONG":
+            trough = min(range(len(window)), key=lambda k: window[k])
+            if len(window) - 1 - trough >= 3 and closes[-1] > closes[-2] > closes[-3]:
+                return True
+        else:
+            peak = max(range(len(window)), key=lambda k: window[k])
+            if len(window) - 1 - peak >= 3 and closes[-1] < closes[-2] < closes[-3]:
+                return True
+    return False
 
 def sweep_confluence(analysis: dict, direction: str | None) -> bool:
     if not direction:
