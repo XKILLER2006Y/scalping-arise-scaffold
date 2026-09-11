@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 
 function Card({ title, children }: any) {
@@ -15,6 +15,21 @@ export default function Page() {
   const [hist, setHist] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
   const [extra, setExtra] = useState<any>({});
+  const [watch, setWatch] = useState<any>(null);
+  useEffect(() => {
+    let alive = true;
+    async function poll() {
+      try {
+        const [paper, div, audit] = await Promise.all([
+          api.paperStatus(), api.divergence(), api.auditLog(),
+        ]);
+        if (alive) setWatch({ at: new Date().toLocaleTimeString(), paper, divergence: div, audit });
+      } catch { /* backend waking up; retry next tick */ }
+    }
+    poll();
+    const id = setInterval(poll, 15000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
   async function getSignal() {
     setBusy(true);
     try {
@@ -50,6 +65,14 @@ export default function Page() {
       </div>
     )}
     {sig?.error && <Card title="Error"><Pre data={sig} /></Card>}
+    <Card title="Trial Watch — live (auto-refresh 15s)">
+      {watch ? (<>
+        <div>Paper loop: {watch.paper?.running ? "RUNNING" : "STOPPED"} · cycles {watch.paper?.cycles} · open {watch.paper?.paper?.open} · closed {watch.paper?.paper?.closed} · win {watch.paper?.paper?.win_rate}</div>
+        <div>Divergence: {watch.divergence?.status} {watch.divergence?.reason || watch.divergence?.gap_r || ""}</div>
+        <div style={{ color: "#666", fontSize: 12 }}>Month audit log ({watch.audit?.log || "none"}) — updated {watch.at}</div>
+        <Pre data={(watch.audit?.tail || []).join("\n")} />
+      </>) : <span style={{ color: "#777" }}>Connecting to live status…</span>}
+    </Card>
     <Card title="Signal history (this session)">{hist.length ? <Pre data={hist} /> : <span style={{ color: "#777" }}>No signals yet.</span>}</Card>
     {extra.health || extra.rel ? <Card title="System"><Pre data={extra} /></Card> : null}
   </main>);

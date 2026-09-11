@@ -32,6 +32,18 @@ def rel():
 def fwd(limit: int = 50):
     return {"entries": _forward_log[-limit:][::-1], "total": len(_forward_log)}
 
+@router.get("/audit-log")
+def audit_log(lines: int = 20):
+    """Read-only tail of the month-audit progress log. Observability only:
+    touches no strategy code, changes no numbers."""
+    from pathlib import Path
+    for p in ("/tmp/audit_month.log", "/tmp/trial3.log"):
+        f = Path(p)
+        if f.exists():
+            tail = f.read_text()[-4000:].splitlines()[-lines:]
+            return {"log": p, "tail": tail}
+    return {"log": None, "tail": ["no audit log found"]}
+
 @router.get("/trace-quick")
 def trace_quick(symbol: str = "XAU/USD", limit: int = 250, equity: float = 10000.0,
                 risk_pct: float = 1.0, spread: float = 0.3):

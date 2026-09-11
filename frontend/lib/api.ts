@@ -9,4 +9,7 @@ export const api = {
   signal: (symbol = "XAU/USD", limit = 250) => j(`/api/v1/signal?symbol=${symbol}&limit=${limit}`),
   sysHealth: () => j("/api/v1/system/health"),
   reliability: () => j("/api/v1/system/reliability"),
+  paperStatus: () => j("/api/v1/paper/status"),
+  divergence: () => j("/api/v1/paper/divergence?backtest_expectancy_r=0.5"),
+  auditLog: () => j("/api/v1/system/audit-log?lines=15"),
 };
