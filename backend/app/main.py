@@ -23,6 +23,7 @@ from app.backtesting.router import router as backtest_router
 from app.system.router import router as system_router
 from app.validation.router import router as validation_router
 from app.stream.router import router as stream_router, broadcast
+from app.paper.router import router as paper_router
 
 logger = get_logger("signal-bot")
 _START = __import__("time").time()
@@ -85,7 +86,7 @@ def create_app() -> FastAPI:
 
     for r in (market_data_router, market_analysis_router, technical_features_router,
               strategy_router, signals_router, trade_router, intel_router, backtest_router,
-              system_router, validation_router, stream_router):
+              system_router, validation_router, stream_router, paper_router):
         app.include_router(r, prefix="/api/v1")
     # Fan out live signals to WS clients.
     from app.core.bus import get_bus

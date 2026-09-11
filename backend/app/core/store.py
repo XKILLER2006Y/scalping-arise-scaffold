@@ -20,6 +20,10 @@ def _init_db():
         c.execute("PRAGMA synchronous=NORMAL;")
         c.execute("CREATE TABLE IF NOT EXISTS signals (id INTEGER PRIMARY KEY AUTOINCREMENT, t INTEGER, action TEXT, state TEXT, strategy TEXT)")
         c.execute("CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, t INTEGER, event TEXT, detail TEXT)")
+        c.execute("""CREATE TABLE IF NOT EXISTS paper_signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, t INTEGER, action TEXT, strategy TEXT,
+            direction TEXT, entry REAL, stop REAL, tp REAL, confidence INTEGER,
+            state TEXT, outcome TEXT DEFAULT 'OPEN', exit_px REAL, r_mult REAL)""")
         c.commit()
         c.close()
         _INIT_DONE = True
@@ -87,3 +91,61 @@ def recent_signals(limit: int = 500) -> list[dict]:
         return [{"t": t, "action": a, "state": s, "strategy": st} for t, a, s, st in rows]
     except Exception:
         return []
+
+
+def log_paper_signal(sig: dict, plan: dict) -> int | None:
+    try:
+        c = _conn()
+        cur = c.execute(
+            """INSERT INTO paper_signals
+               (t, action, strategy, direction, entry, stop, tp, confidence, state)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (int(__import__("time").time()), sig.get("action"), sig.get("strategy"),
+             sig.get("direction"), plan.get("entry"), plan.get("stop"),
+             plan.get("take_profit"), sig.get("confidence"), sig.get("state")))
+        c.commit()
+        rid = cur.lastrowid
+        c.close()
+        return rid
+    except Exception:
+        return None
+
+
+def open_paper_signals() -> list[dict]:
+    try:
+        c = _conn()
+        rows = c.execute(
+            "SELECT id, t, action, strategy, direction, entry, stop, tp FROM paper_signals "
+            "WHERE outcome='OPEN' ORDER BY id").fetchall()
+        c.close()
+        return [{"id": r[0], "t": r[1], "action": r[2], "strategy": r[3],
+                 "direction": r[4], "entry": r[5], "stop": r[6], "tp": r[7]} for r in rows]
+    except Exception:
+        return []
+
+
+def settle_paper_signal(pid: int, outcome: str, exit_px: float, r_mult: float) -> None:
+    try:
+        c = _conn()
+        c.execute("UPDATE paper_signals SET outcome=?, exit_px=?, r_mult=? WHERE id=?",
+                  (outcome, exit_px, r_mult, pid))
+        c.commit()
+        c.close()
+    except Exception:
+        pass
+
+
+def paper_stats() -> dict:
+    try:
+        c = _conn()
+        rows = c.execute("SELECT outcome, COUNT(*), COALESCE(AVG(r_mult), 0) FROM paper_signals "
+                         "WHERE outcome != 'OPEN' GROUP BY outcome").fetchall()
+        open_n = c.execute("SELECT COUNT(*) FROM paper_signals WHERE outcome='OPEN'").fetchone()[0]
+        c.close()
+        by = {r[0]: {"n": r[1], "avg_r": round(r[2], 2)} for r in rows}
+        wins = by.get("WIN", {}).get("n", 0)
+        closed = sum(v["n"] for v in by.values())
+        return {"by_outcome": by, "open": open_n, "closed": closed,
+                "win_rate": round(wins / closed, 3) if closed else 0.0}
+    except Exception:
+        return {"by_outcome": {}, "open": 0, "closed": 0, "win_rate": 0.0}
