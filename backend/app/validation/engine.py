@@ -53,8 +53,16 @@ def walk_forward(candles: list[Candle], folds: int = 3, equity: float = 10000.0,
         if len(is_c) <= warmup + 10 or len(oos_c) < 20:
             continue
         best, best_pf = None, -1.0
+        # Memoize: signals depend only on sparams, not on sl/tp/conf.
+        # 108 combos collapse to 4 precomputes (was: 108 full pipelines).
+        _prep_cache: dict = {}
+        def _prep(sp):
+            key = (sp["adx_min"], sp["bos_required"])
+            if key not in _prep_cache:
+                _prep_cache[key] = prepare_bars(is_c, warmup, sparams=sp)
+            return _prep_cache[key]
         for k, (sl, tp, mc, sp) in enumerate(combos):
-            is_prep = prepare_bars(is_c, warmup, sparams=sp)
+            is_prep = _prep(sp)
             r = run_backtest(is_c, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc,
                              prep=is_prep, sparams=sp)
             pf = _pf_of(r)
@@ -135,9 +143,13 @@ def sensitivity(candles: list[Candle], equity: float = 10000.0, risk_pct: float 
     grid = grid or PARAM_GRID
     combos = list(_combos(grid))
     rows = []
+    _prep_cache2: dict = {}
     for k, (sl, tp, mc, sp) in enumerate(combos):
         from app.validation.progress import emit as _emit2
-        prep = prepare_bars(candles, warmup, sparams=sp)
+        key = (sp["adx_min"], sp["bos_required"])
+        if key not in _prep_cache2:
+            _prep_cache2[key] = prepare_bars(candles, warmup, sparams=sp)
+        prep = _prep_cache2[key]
         r = run_backtest(candles, equity, risk_pct, warmup, 10, 0.3, sl, tp, mc,
                          prep=prep, sparams=sp)
         rows.append({"sl_mult": sl, "tp_mult": tp, "min_conf": mc,
