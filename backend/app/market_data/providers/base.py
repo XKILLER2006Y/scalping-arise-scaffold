@@ -28,26 +28,23 @@ def synth_candles(source: str, provider_instrument: str, source_type, n: int = 1
         price = c
     return out
 
-import asyncio
+import threading
 
-async def synth_websocket_stream(source: str, provider_instrument: str, source_type):
-    """Simulates a live WebSocket stream emitting a new tick/candle every few seconds."""
-    price = 2650.0
-    i = 0
-    while True:
-        await asyncio.sleep(2.0)  # Emit every 2 seconds
-        i += 1
-        drift = ((i * 37) % 11 - 5) * 0.35
-        o = price
-        c = price + drift
-        h = max(o, c) + 0.4
-        l = min(o, c) - 0.4
-        price = c
-        yield Candle(
-            timestamp=int(time.time()), open=o, high=h, low=l, close=c,
-            volume=1000 + (i * 13) % 500,
-            provider_instrument=provider_instrument, source=source, source_type=source_type
-        )
+_client = None
+_client_lock = threading.Lock()
+
+
+def http_client():
+    """Shared keep-alive client: one-shot httpx.get() pays full TLS handshake
+    per poll (~200ms). The live loop polls every 10s — reuse the connection."""
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                import httpx
+                _client = httpx.Client(timeout=8.0, headers={"User-Agent": "scalping-arise/1.0"})
+    return _client
+
 
 _TD_INTERVAL = {"1m": "1min", "5m": "5min", "15m": "15min"}
 
@@ -60,15 +57,14 @@ class TwelveDataProvider(BaseProvider):
         from app.market_data.models import SourceType
         if not self.api_key:
             return synth_candles("twelve_data", "XAU/USD", SourceType.SPOT, n=limit)
-        import httpx
         interval = _TD_INTERVAL.get(timeframe, "1min")
         last_err: Exception | None = None
         for attempt in range(3):
             try:
-                r = httpx.get(f"{self.base_url}/time_series", params={
+                r = http_client().get(f"{self.base_url}/time_series", params={
                     "symbol": "XAU/USD", "interval": interval,
                     "outputsize": min(limit, 500), "apikey": self.api_key,
-                }, timeout=8.0)
+                })
                 r.raise_for_status()
                 js = r.json()
                 vals = js.get("values", [])
@@ -94,18 +90,15 @@ class YFinanceProvider(BaseProvider):
     def fetch_candles(self, symbol: str, timeframe: str, limit: int) -> list[Candle]:
         from app.market_data.models import SourceType
         try:
-            import httpx
             iv = {"1m": "1m", "5m": "5m", "15m": "15m"}.get(timeframe, "1m")
-            r = httpx.get("https://query1.finance.yahoo.com/v8/finance/chart/GC=F",
-                          params={"interval": iv, "range": "1d"}, timeout=8.0,
-                          headers={"User-Agent": "scalping-arise/1.0"})
+            r = http_client().get("https://query1.finance.yahoo.com/v8/finance/chart/GC=F",
+                                  params={"interval": iv, "range": "1d"})
             r.raise_for_status()
             js = r.json()["chart"]["result"][0]
             ts = js["timestamp"][-limit:]
             q = js["indicators"]["quote"][0]
             out: list[Candle] = []
             for i, t in enumerate(ts):
-                idx = len(ts) - len(ts) + i
                 # align quote arrays to tail
                 off = len(q["open"]) - len(ts)
                 o, h, l, c = q["open"][off+i], q["high"][off+i], q["low"][off+i], q["close"][off+i]

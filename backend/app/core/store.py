@@ -34,11 +34,21 @@ def _conn():
     c.execute("PRAGMA busy_timeout=5000;")
     return c
 
+def _enforce_retention(c, table: str, keep: int) -> None:
+    """Tables grew forever (every trace persists). Cap rows so the DB can't
+    fill the disk on a 24/7 loop. Single indexed DELETE, amortized per write."""
+    try:
+        c.execute(f"DELETE FROM {table} WHERE id <= (SELECT MAX(id) - ? FROM {table})", (keep,))
+    except Exception as e:
+        logger.error(f"Retention prune failed on {table}: {e}")
+
+
 def persist_signal(action: str, state: str | None, strategy: str | None):
     try:
         c = _conn()
         c.execute("INSERT INTO signals (t, action, state, strategy) VALUES (?,?,?,?)",
                   (int(time.time()), action, state, strategy))
+        _enforce_retention(c, "signals", 50000)
         c.commit()
         c.close()
     except Exception as e:
@@ -48,6 +58,7 @@ def audit(event: str, detail: str = ""):
     try:
         c = _conn()
         c.execute("INSERT INTO audit (t, event, detail) VALUES (?,?,?)", (int(time.time()), event, detail[:500]))
+        _enforce_retention(c, "audit", 10000)
         c.commit()
         c.close()
     except Exception as e:
